@@ -362,6 +362,108 @@ body {
 .toast.err { border-left-color: var(--red); }
 @keyframes slide-up { from { opacity: 0; transform: translateY(8px); } }
 
+/* ---------- tabs ---------- */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 14px 0 12px; }
+.tab {
+  font: inherit; font-weight: 600; color: var(--text-muted);
+  background: transparent; border: none; border-bottom: 2px solid transparent;
+  padding: 7px 12px; cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab .count { font-weight: 400; font-size: 11px; color: var(--text-muted); }
+
+/* ---------- conversación ---------- */
+.comment { border: 1px solid var(--border); border-radius: 10px; margin: 10px 0; overflow: hidden; }
+.comment-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg); border-bottom: 1px solid var(--border); }
+.comment-head img { width: 20px; height: 20px; border-radius: 50%; }
+.comment-body { border: none; border-radius: 0; margin: 0; }
+.composer { margin-top: 14px; }
+.composer textarea {
+  width: 100%; font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; resize: vertical;
+}
+.composer textarea:focus { outline: none; border-color: var(--accent); }
+.composer-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.composer.inline { margin: 8px 4px; }
+
+/* ---------- diff ---------- */
+#detail-pane.wide { width: calc(100% - 190px); max-width: none; }
+#detail-pane.wide ~ * #list-pane, #layout:has(#detail-pane.wide) #list-pane { display: none; }
+.diff-summary { margin: 4px 0 10px; }
+.diff-file { border: 1px solid var(--border); border-radius: 10px; margin: 10px 0; overflow: hidden; background: var(--bg-raised); }
+.diff-file summary {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px; cursor: pointer; user-select: none;
+  background: var(--bg); font-weight: 600;
+}
+.diff-file summary::-webkit-details-marker { display: none; }
+.diff-path { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+.status-ico { font-size: 10px; }
+.diff-table { width: 100%; border-collapse: collapse; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; }
+.diff-table td { padding: 1.5px 8px; vertical-align: top; }
+.gutter {
+  width: 42px; min-width: 42px; text-align: right; color: var(--text-muted);
+  user-select: none; border-right: 1px solid var(--border); position: relative; white-space: nowrap;
+}
+.code { white-space: pre-wrap; word-break: break-all; }
+.code .sign { display: inline-block; width: 12px; color: var(--text-muted); user-select: none; }
+.diff-add { background: var(--green-bg); }
+.diff-add .code .sign { color: var(--green); }
+.diff-del { background: var(--red-bg); }
+.diff-del .code .sign { color: var(--red); }
+.diff-hunk td, .diff-meta td { background: var(--branch-bg); color: var(--branch-text); padding: 3px 12px; font-size: 11px; }
+.add-comment {
+  display: none; position: absolute; right: -1px; top: 0;
+  width: 16px; height: 16px; line-height: 13px; font-size: 12px; font-weight: 700;
+  color: #fff; background: var(--accent); border: none; border-radius: 4px; cursor: pointer; padding: 0;
+}
+.diff-line:hover .add-comment { display: block; }
+.diff-thread-row td { padding: 6px 14px; background: var(--bg); }
+.thread { border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; padding: 6px 10px; margin: 4px 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+.thread.resolved { opacity: 0.7; border-left-color: var(--green); }
+.thread-tag { font-size: 11px; font-weight: 600; color: var(--green); margin: 4px 0; }
+.thread-reply { display: flex; gap: 8px; margin: 8px 0 4px; }
+.thread-reply textarea { flex: 1; font: inherit; font-size: 12px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 6px 9px; resize: vertical; }
+.orphan-threads { padding: 4px 14px 10px; }
+
+/* ---------- histórico ---------- */
+.dot-graph { background: linear-gradient(135deg, var(--accent), var(--purple)); }
+.history-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.branch-chips { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+.branch-chip {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px;
+  color: var(--text-muted); background: var(--gray-bg);
+  border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; cursor: pointer;
+}
+.branch-chip.on { color: var(--branch-text); background: var(--branch-bg); border-color: var(--branch-text); }
+.graph-wrap {
+  display: flex; background: var(--bg-raised);
+  border: 1px solid var(--border); border-radius: 12px; overflow-x: auto;
+}
+.graph-svg { flex-shrink: 0; }
+.graph-rows { flex: 1; min-width: 0; }
+.graph-row {
+  display: flex; align-items: center; gap: 8px;
+  height: 38px; padding: 0 12px; cursor: pointer;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+}
+.graph-row:hover { background: var(--bg-hover); }
+.graph-row.selected { background: var(--branch-bg); }
+.graph-msg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.graph-meta { margin-left: auto; flex-shrink: 0; font-size: 11px; color: var(--text-muted); }
+.graph-meta code { font-size: 10.5px; }
+.ref-pill { flex-shrink: 0; }
+.pr-pill {
+  flex-shrink: 0; font: inherit; font-size: 11px; font-weight: 600;
+  color: var(--purple); background: var(--purple-bg);
+  border: none; border-radius: 999px; padding: 2px 8px; cursor: pointer;
+}
+.modal-input {
+  font: inherit; color: var(--text); background: var(--gray-bg);
+  border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px;
+}
+
 #settings-root { position: fixed; inset: 0; z-index: 40; background: var(--bg); overflow-y: auto; }
 #settings-root.hidden { display: none; }
 .settings-inner { max-width: 620px; margin: 40px auto; padding: 0 20px; }

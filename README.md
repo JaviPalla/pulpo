@@ -36,8 +36,17 @@ La app no guarda tu token salvo que tú lo pidas. Orden de resolución:
 - **Buckets**: Abiertas · Mías · Para revisar · Borradores · Fusionadas · Cerradas. Búsqueda libre.
 - **Detalle**: descripción renderizada (HTML de GitHub), checks con enlace, revisores y su estado,
   +/− y ficheros tocados.
-- **Acciones**: *Update branch (rebase)*, *Merge (merge commit)* con confirmación y opción de
-  borrar la rama, *Abrir en GitHub*.
+- **Cambios (diff nativo)**: pestaña *Cambios* con el diff completo por fichero (hunks, numeración
+  old/new, colapsables), comentarios **inline** en cualquier línea (botón `+` al pasar el ratón),
+  hilos de revisión existentes anclados a su línea con respuesta directa, y pestaña *Conversación*
+  con los comentarios de la PR y caja para comentar. Sin salir de la app.
+- **Histórico (grafo)**: sección *Histórico* con el grafo de commits estilo GitKraken — las ramas
+  yendo y viniendo entre `develop`/`main` y las ramas de PR (activables por chips). Cada commit:
+  mensaje, autor, sha, PR asociada (clic → detalle). Acciones sobre un commit: copiar SHA, crear
+  rama desde ahí, **mover una rama a ese commit** (force, con confirmación escrita) y **revertir
+  una PR fusionada** (crea PR de revert).
+- **Acciones de PR**: *Update branch (rebase)* y *Merge (merge commit)* con confirmación y opción
+  de borrar la rama.
 - Refresco automático (60 s por defecto) y manual (`R` o ⟳). Modo claro/oscuro según el sistema.
 
 ## Selftest

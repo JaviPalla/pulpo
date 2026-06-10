@@ -168,6 +168,157 @@ async function updateBranchRebase(prNodeId) {
   return data.updatePullRequestBranch.pullRequest;
 }
 
+/* ---------- histórico (grafo de commits) ---------- */
+
+const HISTORY_COMMIT_FIELDS = `
+  oid abbreviatedOid messageHeadline committedDate
+  author { name user { login avatarUrl } }
+  parents(first: 3) { nodes { oid } }
+  associatedPullRequests(first: 1) { nodes { number title state } }
+`;
+
+async function defaultBranch(repoFullName) {
+  const [owner, name] = repoFullName.split("/");
+  const data = await gql(
+    `query ($owner: String!, $name: String!) {
+       repository(owner: $owner, name: $name) { defaultBranchRef { name } }
+     }`,
+    { owner, name },
+  );
+  return data.repository?.defaultBranchRef?.name || "main";
+}
+
+/** Historia de varias ramas en una sola query (aliases b0..bn con variables). */
+async function branchHistories(repoFullName, branchSpecs) {
+  const [owner, name] = repoFullName.split("/");
+  const varDefs = branchSpecs.map((_, i) => `$r${i}: String!, $n${i}: Int!`).join(", ");
+  const aliases = branchSpecs
+    .map(
+      (_, i) => `b${i}: ref(qualifiedName: $r${i}) {
+        name target { ... on Commit { oid history(first: $n${i}) { nodes { ${HISTORY_COMMIT_FIELDS} } } } }
+      }`,
+    )
+    .join("\n");
+  const variables = { owner, name };
+  branchSpecs.forEach((spec, i) => {
+    variables[`r${i}`] = `refs/heads/${spec.name}`;
+    variables[`n${i}`] = spec.depth;
+  });
+  const data = await gql(
+    `query ($owner: String!, $name: String!, ${varDefs}) {
+       repository(owner: $owner, name: $name) { ${aliases} }
+     }`,
+    variables,
+  );
+  const branches = [];
+  const commitsByOid = new Map();
+  branchSpecs.forEach((_, i) => {
+    const ref = data.repository[`b${i}`];
+    if (!ref?.target) return;
+    branches.push({ name: ref.name, headOid: ref.target.oid });
+    for (const commit of ref.target.history.nodes) {
+      if (!commitsByOid.has(commit.oid)) commitsByOid.set(commit.oid, commit);
+    }
+  });
+  return { branches, commits: [...commitsByOid.values()] };
+}
+
+/* ---------- diff + conversación ---------- */
+
+async function prFiles(repoFullName, number) {
+  const files = [];
+  for (let page = 1; page <= 3; page++) {
+    const batch = await rest("GET", `/repos/${repoFullName}/pulls/${number}/files?per_page=100&page=${page}`);
+    files.push(...batch);
+    if (batch.length < 100) break;
+  }
+  return files.map((f) => ({
+    filename: f.filename,
+    previousFilename: f.previous_filename || null,
+    status: f.status,
+    additions: f.additions,
+    deletions: f.deletions,
+    patch: f.patch || null,
+  }));
+}
+
+async function prConversation(repoFullName, number) {
+  const [owner, name] = repoFullName.split("/");
+  const data = await gql(
+    `query ($owner: String!, $name: String!, $number: Int!) {
+       repository(owner: $owner, name: $name) {
+         pullRequest(number: $number) {
+           headRefOid
+           comments(first: 60) { totalCount nodes { author { login avatarUrl } bodyHTML createdAt } }
+           reviewThreads(first: 60) {
+             nodes {
+               path line startLine isResolved isOutdated
+               comments(first: 20) { nodes { databaseId author { login avatarUrl } bodyHTML createdAt } }
+             }
+           }
+         }
+       }
+     }`,
+    { owner, name, number },
+  );
+  return data.repository.pullRequest;
+}
+
+async function addIssueComment(repoFullName, number, body) {
+  return rest("POST", `/repos/${repoFullName}/issues/${number}/comments`, { body });
+}
+
+async function addInlineComment(repoFullName, number, { body, commitId, path, side, line }) {
+  return rest("POST", `/repos/${repoFullName}/pulls/${number}/comments`, {
+    body,
+    commit_id: commitId,
+    path,
+    side,
+    line,
+  });
+}
+
+async function replyToThread(repoFullName, number, commentDatabaseId, body) {
+  return rest("POST", `/repos/${repoFullName}/pulls/${number}/comments/${commentDatabaseId}/replies`, { body });
+}
+
+/* ---------- acciones sobre el grafo ---------- */
+
+async function createBranch(repoFullName, branchName, sha) {
+  return rest("POST", `/repos/${repoFullName}/git/refs`, { ref: `refs/heads/${branchName}`, sha });
+}
+
+/** "Volver atrás": mueve la punta de la rama a un commit anterior (force update). */
+async function forceUpdateBranch(repoFullName, branchName, sha) {
+  return rest("PATCH", `/repos/${repoFullName}/git/refs/heads/${encodeURIComponent(branchName)}`, {
+    sha,
+    force: true,
+  });
+}
+
+async function revertPullRequest(prNodeId) {
+  const data = await gql(
+    `mutation ($id: ID!) {
+       revertPullRequest(input: { pullRequestId: $id }) {
+         revertPullRequest { number url }
+       }
+     }`,
+    { id: prNodeId },
+  );
+  return data.revertPullRequest.revertPullRequest;
+}
+
+async function prNodeId(repoFullName, number) {
+  const [owner, name] = repoFullName.split("/");
+  const data = await gql(
+    `query ($owner: String!, $name: String!, $number: Int!) {
+       repository(owner: $owner, name: $name) { pullRequest(number: $number) { id } }
+     }`,
+    { owner, name, number },
+  );
+  return data.repository.pullRequest.id;
+}
+
 module.exports = {
   resolveToken,
   invalidateTokenCache,
@@ -176,4 +327,15 @@ module.exports = {
   prDetail,
   mergePR,
   updateBranchRebase,
+  defaultBranch,
+  branchHistories,
+  prFiles,
+  prConversation,
+  addIssueComment,
+  addInlineComment,
+  replyToThread,
+  createBranch,
+  forceUpdateBranch,
+  revertPullRequest,
+  prNodeId,
 };

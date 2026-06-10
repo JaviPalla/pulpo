@@ -1,21 +1,30 @@
 "use strict";
 
 /* ============ estado ============ */
+const IS_SELFTEST = new URLSearchParams(location.search).get("selftest") === "1";
+const SELFTEST_ROUTE = new URLSearchParams(location.search).get("selftest_route") || "list";
+
 const state = {
   config: null,
   me: null,
+  authSource: null,
   repo: null,
+  view: "prs", // "prs" | "history"
   bucket: "open",
-  prs: [],            // PRs del bucket base actual (OPEN o MERGED/CLOSED)
-  openPrs: [],        // cache de OPEN para counts de sidebar
-  selected: null,     // número de PR seleccionado
+  prs: [],
+  openPrs: [],
+  selected: null,
+  detailTab: "conv", // "conv" | "changes"
+  detailPR: null,
+  conversation: null,
+  files: null,
   search: "",
   loading: false,
   pollTimer: null,
   selftestNotified: false,
+  selftestOpenedDetail: false,
+  history: { branches: [], enabled: new Set(), layout: null, rows: [], loading: false, selectedOid: null },
 };
-
-const IS_SELFTEST = new URLSearchParams(location.search).get("selftest") === "1";
 
 const $ = (sel) => document.querySelector(sel);
 const list = $("#pr-list");
@@ -31,9 +40,7 @@ function esc(text) {
 
 function timeAgo(iso) {
   const seconds = Math.max(1, (Date.now() - new Date(iso).getTime()) / 1000);
-  const units = [
-    [31536000, "a"], [2592000, "mes"], [604800, "sem"], [86400, "d"], [3600, "h"], [60, "min"],
-  ];
+  const units = [[31536000, "a"], [2592000, "mes"], [604800, "sem"], [86400, "d"], [3600, "h"], [60, "min"]];
   for (const [div, label] of units) {
     if (seconds >= div) {
       const v = Math.floor(seconds / div);
@@ -51,6 +58,21 @@ function toast(message, kind = "") {
   setTimeout(() => el.remove(), 4200);
 }
 
+function copyText(text) {
+  navigator.clipboard?.writeText(text).then(
+    () => toast("Copiado", "ok"),
+    () => {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+      toast("Copiado", "ok");
+    },
+  );
+}
+
 function notifySelftestOnce() {
   if (!state.selftestNotified) {
     state.selftestNotified = true;
@@ -58,7 +80,7 @@ function notifySelftestOnce() {
   }
 }
 
-/* ============ render: chips ============ */
+/* ============ chips ============ */
 function stateChip(pr) {
   if (pr.state === "MERGED") return `<span class="chip chip-merged">Fusionada</span>`;
   if (pr.state === "CLOSED") return `<span class="chip chip-closed">Cerrada</span>`;
@@ -80,8 +102,7 @@ function mergeStateChip(pr) {
   if (pr.state !== "OPEN") return "";
   if (pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "DIRTY")
     return `<span class="chip chip-conflict">Conflictos</span>`;
-  if (pr.mergeStateStatus === "BEHIND")
-    return `<span class="chip chip-behind">Rama atrasada</span>`;
+  if (pr.mergeStateStatus === "BEHIND") return `<span class="chip chip-behind">Rama atrasada</span>`;
   return "";
 }
 
@@ -101,22 +122,17 @@ function checksIcon(pr) {
 
 function labelPills(pr) {
   return (pr.labels?.nodes || [])
-    .map((l) => {
-      const color = `#${l.color}`;
-      return `<span class="label-pill" style="background:${color}22;color:${color}">${esc(l.name)}</span>`;
-    })
+    .map((l) => `<span class="label-pill" style="background:#${l.color}22;color:#${l.color}">${esc(l.name)}</span>`)
     .join("");
 }
 
-/* ============ render: lista ============ */
+/* ============ lista de PRs ============ */
 function bucketFilter(prs) {
   const login = state.me?.login;
   switch (state.bucket) {
     case "mine": return prs.filter((p) => p.author?.login === login);
     case "review":
-      return prs.filter((p) =>
-        (p.reviewRequests?.nodes || []).some((n) => n.requestedReviewer?.login === login),
-      );
+      return prs.filter((p) => (p.reviewRequests?.nodes || []).some((n) => n.requestedReviewer?.login === login));
     case "draft": return prs.filter((p) => p.isDraft);
     default: return prs;
   }
@@ -126,8 +142,7 @@ function searchFilter(prs) {
   const q = state.search.trim().toLowerCase();
   if (!q) return prs;
   return prs.filter((p) =>
-    [p.title, p.headRefName, p.baseRefName, p.author?.login, String(p.number)]
-      .join(" ").toLowerCase().includes(q),
+    [p.title, p.headRefName, p.baseRefName, p.author?.login, String(p.number)].join(" ").toLowerCase().includes(q),
   );
 }
 
@@ -142,6 +157,7 @@ function renderCounts() {
 }
 
 function renderList() {
+  if (state.view !== "prs") return;
   const prs = searchFilter(bucketFilter(state.prs));
   if (state.loading) {
     list.innerHTML = `<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>`;
@@ -162,10 +178,7 @@ function renderList() {
           ${labelPills(pr)}
         </div>
         <div class="pr-right">
-          ${checksIcon(pr)}
-          ${reviewChip(pr)}
-          ${mergeStateChip(pr)}
-          ${stateChip(pr)}
+          ${checksIcon(pr)} ${reviewChip(pr)} ${mergeStateChip(pr)} ${stateChip(pr)}
         </div>
         <div class="pr-sub">
           <span class="branches">
@@ -178,25 +191,20 @@ function renderList() {
       </article>`,
     )
     .join("");
+  list.querySelectorAll(".pr-row").forEach((row) =>
+    row.addEventListener("click", () => openDetail(Number(row.dataset.number))),
+  );
 
-  list.querySelectorAll(".pr-row").forEach((row) => {
-    row.addEventListener("click", () => openDetail(Number(row.dataset.number)));
-  });
-
-  // En selftest abrimos el primer PR para capturar también el panel de detalle;
-  // notifySelftestOnce se dispara al terminar de pintar ese detalle.
-  if (IS_SELFTEST && !state.selftestOpenedDetail && prs.length) {
+  if (IS_SELFTEST && !state.selftestOpenedDetail && prs.length && (SELFTEST_ROUTE === "list" || SELFTEST_ROUTE === "changes")) {
     state.selftestOpenedDetail = true;
-    openDetail(prs[0].number);
+    openDetail(prs[0].number, SELFTEST_ROUTE === "changes" ? "changes" : "conv");
   }
 }
 
-/* ============ render: detalle ============ */
+/* ============ detalle de PR: shell + tabs ============ */
 function canMerge(pr) {
   return (
-    pr.state === "OPEN" &&
-    !pr.isDraft &&
-    pr.mergeable === "MERGEABLE" &&
+    pr.state === "OPEN" && !pr.isDraft && pr.mergeable === "MERGEABLE" &&
     ["CLEAN", "UNSTABLE", "HAS_HOOKS"].includes(pr.mergeStateStatus)
   );
 }
@@ -210,62 +218,40 @@ function mergeBlockReason(pr) {
   return "";
 }
 
-function renderChecks(pr) {
-  const contexts = pr.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts?.nodes || [];
-  if (!contexts.length) return `<p class="muted">Sin checks en el último commit.</p>`;
-  return contexts
-    .map((ctx) => {
-      const name = ctx.name || ctx.context || "check";
-      const status = (ctx.conclusion || ctx.status || ctx.state || "").toUpperCase();
-      const ok = ["SUCCESS"].includes(status);
-      const bad = ["FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED"].includes(status);
-      const icon = ok ? `<span class="checks checks-success">✓</span>`
-        : bad ? `<span class="checks checks-failure">✗</span>`
-        : `<span class="checks checks-pending">●</span>`;
-      const url = ctx.detailsUrl || ctx.targetUrl;
-      const label = url ? `<a href="#" data-ext="${esc(url)}">${esc(name)}</a>` : esc(name);
-      return `<div class="check-line">${icon} ${label} <span class="muted">${esc(status.toLowerCase())}</span></div>`;
-    })
-    .join("");
-}
-
-function renderReviews(pr) {
-  const reviews = pr.latestReviews?.nodes || [];
-  const requests = pr.reviewRequests?.nodes || [];
-  if (!reviews.length && !requests.length) return `<p class="muted">Sin revisiones todavía.</p>`;
-  const iconByState = {
-    APPROVED: `<span class="checks checks-success">✓</span>`,
-    CHANGES_REQUESTED: `<span class="checks checks-failure">±</span>`,
-    COMMENTED: `<span class="checks checks-pending">💬</span>`,
-  };
-  const lines = reviews.map(
-    (review) => `<div class="review-line">${iconByState[review.state] || "•"} ${esc(review.author?.login)} <span class="muted">${esc(review.state.toLowerCase().replace("_", " "))}</span></div>`,
-  );
-  const pending = requests
-    .map((n) => n.requestedReviewer?.login || n.requestedReviewer?.name)
-    .filter(Boolean)
-    .map((who) => `<div class="review-line"><span class="checks checks-pending">⏳</span> ${esc(who)} <span class="muted">pendiente</span></div>`);
-  return [...lines, ...pending].join("");
-}
-
-async function openDetail(number) {
+async function openDetail(number, tab = "conv") {
   state.selected = number;
+  state.detailTab = tab;
+  state.files = null;
+  state.conversation = null;
   renderList();
   detailPane.classList.remove("hidden");
+  detailPane.classList.toggle("wide", tab === "changes");
   detailContent.innerHTML = `<div class="detail-inner"><div class="loading">Cargando #${number}…</div></div>`;
-  let pr;
   try {
-    pr = await window.pulpo.prDetail(state.repo, number);
+    const [pr, conversation] = await Promise.all([
+      window.pulpo.prDetail(state.repo, number),
+      window.pulpo.prConversation(state.repo, number),
+    ]);
+    state.detailPR = pr;
+    state.conversation = conversation;
   } catch (err) {
     detailContent.innerHTML = `<div class="detail-inner"><div class="error-box">${esc(String(err.message || err))}</div></div>`;
     notifySelftestOnce();
     return;
   }
+  renderDetail();
+}
 
+function renderDetail() {
+  const pr = state.detailPR;
+  if (!pr) return;
   const blockReason = mergeBlockReason(pr);
+  const threadCount = state.conversation?.reviewThreads?.nodes?.length ?? 0;
+  detailPane.classList.toggle("wide", state.detailTab === "changes");
+
   detailContent.innerHTML = `
-    <div class="detail-inner">
-      <button class="detail-close" id="detail-close" title="Cerrar">✕</button>
+    <div class="detail-inner ${state.detailTab === "changes" ? "detail-full" : ""}">
+      <button class="detail-close" id="detail-close" title="Cerrar (Esc)">✕</button>
       <div class="detail-title">${esc(pr.title)} <span class="pr-number">#${pr.number}</span></div>
       <div class="detail-sub">
         ${stateChip(pr)} ${reviewChip(pr)} ${mergeStateChip(pr)}
@@ -279,54 +265,285 @@ async function openDetail(number) {
                 title="Actualiza la rama con la base usando rebase">⤴ Update branch (rebase)</button>
         <button class="btn btn-primary" id="act-merge" ${canMerge(pr) ? "" : "disabled"}
                 title="${esc(blockReason || "Merge con merge commit")}">⇅ Merge (merge commit)</button>
-        <button class="btn" id="act-open">Abrir en GitHub ↗</button>
       </div>
       ${blockReason && pr.state === "OPEN" ? `<p class="muted">⚠️ ${esc(blockReason)}</p>` : ""}
 
-      <dl class="meta-grid">
-        <dt>Autor</dt><dd>${esc(pr.author?.login)} · ${timeAgo(pr.createdAt)}</dd>
-        <dt>Cambios</dt><dd><span class="checks-success">+${pr.additions}</span> / <span class="checks-failure">−${pr.deletions}</span> en ${pr.changedFiles} ficheros</dd>
-        <dt>Mergeable</dt><dd>${esc(pr.mergeable?.toLowerCase() || "?")} · ${esc(pr.mergeStateStatus?.toLowerCase() || "?")}</dd>
-        <dt>Comentarios</dt><dd>${pr.comments?.totalCount ?? 0}</dd>
-      </dl>
+      <div class="tabs">
+        <button class="tab ${state.detailTab === "conv" ? "active" : ""}" data-tab="conv">
+          Conversación <span class="count">${pr.comments?.totalCount ?? 0}</span>
+        </button>
+        <button class="tab ${state.detailTab === "changes" ? "active" : ""}" data-tab="changes">
+          Cambios <span class="count">${pr.changedFiles} ficheros · ${threadCount} hilos</span>
+        </button>
+      </div>
 
-      <div class="section-h">Checks</div>
-      ${renderChecks(pr)}
-
-      <div class="section-h">Revisiones</div>
-      ${renderReviews(pr)}
-
-      <div class="section-h">Descripción</div>
-      <div class="pr-body">${pr.bodyHTML || "<p class='muted'>Sin descripción.</p>"}</div>
+      <div id="tab-body"></div>
     </div>`;
 
   $("#detail-close").addEventListener("click", closeDetail);
-  $("#act-open").addEventListener("click", () => window.pulpo.openExternal(pr.url));
   $("#act-update").addEventListener("click", () => updateBranch(pr));
   $("#act-merge").addEventListener("click", () => confirmMerge(pr));
-  detailContent.querySelectorAll("[data-ext]").forEach((a) =>
-    a.addEventListener("click", (event) => {
-      event.preventDefault();
-      window.pulpo.openExternal(a.dataset.ext);
+  detailContent.querySelectorAll(".tab").forEach((tabBtn) =>
+    tabBtn.addEventListener("click", () => {
+      state.detailTab = tabBtn.dataset.tab;
+      renderDetail();
     }),
   );
-  // Los enlaces del bodyHTML salen al navegador.
-  detailContent.querySelectorAll(".pr-body a").forEach((a) =>
-    a.addEventListener("click", (event) => {
-      event.preventDefault();
-      if (a.href?.startsWith("http")) window.pulpo.openExternal(a.href);
-    }),
-  );
-  notifySelftestOnce();
+
+  if (state.detailTab === "conv") renderConversationTab();
+  else renderChangesTab();
 }
 
 function closeDetail() {
   state.selected = null;
+  state.detailPR = null;
   detailPane.classList.add("hidden");
+  detailPane.classList.remove("wide");
   renderList();
 }
 
-/* ============ acciones ============ */
+/* ============ tab conversación ============ */
+function commentBlock(comment) {
+  return `
+    <div class="comment">
+      <div class="comment-head">
+        <img src="${esc(comment.author?.avatarUrl || "")}" alt="" />
+        <b>${esc(comment.author?.login || "?")}</b>
+        <span class="muted">${timeAgo(comment.createdAt)}</span>
+      </div>
+      <div class="comment-body pr-body">${comment.bodyHTML || ""}</div>
+    </div>`;
+}
+
+function renderConversationTab() {
+  const pr = state.detailPR;
+  const conv = state.conversation;
+  const comments = conv?.comments?.nodes || [];
+  $("#tab-body").innerHTML = `
+    <div class="section-h">Descripción</div>
+    <div class="pr-body">${pr.bodyHTML || "<p class='muted'>Sin descripción.</p>"}</div>
+    <div class="section-h">Comentarios (${comments.length})</div>
+    ${comments.map(commentBlock).join("") || `<p class="muted">Nadie ha dicho nada todavía.</p>`}
+    <div class="composer">
+      <textarea id="new-comment" rows="3" placeholder="Escribe un comentario… (markdown soportado)"></textarea>
+      <div class="composer-actions">
+        <button class="btn btn-accent" id="send-comment">Comentar</button>
+      </div>
+    </div>`;
+  wireExternalLinks();
+  $("#send-comment").addEventListener("click", async () => {
+    const body = $("#new-comment").value.trim();
+    if (!body) return;
+    $("#send-comment").disabled = true;
+    try {
+      await window.pulpo.commentIssue(state.repo, pr.number, body);
+      toast("Comentario publicado", "ok");
+      state.conversation = await window.pulpo.prConversation(state.repo, pr.number);
+      renderDetail();
+    } catch (err) {
+      toast(`No se pudo comentar: ${String(err.message || err)}`, "err");
+      $("#send-comment").disabled = false;
+    }
+  });
+  notifySelftestOnce();
+}
+
+/* ============ tab cambios (diff + comentarios inline) ============ */
+function parsePatch(patch) {
+  const lines = [];
+  let oldLine = 0;
+  let newLine = 0;
+  for (const raw of patch.split("\n")) {
+    if (raw.startsWith("@@")) {
+      const m = /@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)/.exec(raw);
+      oldLine = Number(m?.[1] ?? 0);
+      newLine = Number(m?.[2] ?? 0);
+      lines.push({ type: "hunk", text: raw });
+    } else if (raw.startsWith("+")) {
+      lines.push({ type: "add", new: newLine++, text: raw.slice(1) });
+    } else if (raw.startsWith("-")) {
+      lines.push({ type: "del", old: oldLine++, text: raw.slice(1) });
+    } else if (raw.startsWith("\\")) {
+      lines.push({ type: "meta", text: raw });
+    } else {
+      lines.push({ type: "ctx", old: oldLine++, new: newLine++, text: raw.startsWith(" ") ? raw.slice(1) : raw });
+    }
+  }
+  return lines;
+}
+
+function threadsByAnchor() {
+  const map = new Map();
+  const orphans = new Map(); // path -> threads outdated / sin línea
+  for (const thread of state.conversation?.reviewThreads?.nodes || []) {
+    if (thread.line && !thread.isOutdated) {
+      map.set(`${thread.path}::${thread.line}`, [...(map.get(`${thread.path}::${thread.line}`) || []), thread]);
+    } else {
+      orphans.set(thread.path, [...(orphans.get(thread.path) || []), thread]);
+    }
+  }
+  return { map, orphans };
+}
+
+function threadBlock(thread) {
+  const comments = thread.comments?.nodes || [];
+  const first = comments[0];
+  return `
+    <div class="thread ${thread.isResolved ? "resolved" : ""}">
+      ${thread.isResolved ? `<div class="thread-tag">✓ Resuelto</div>` : ""}
+      ${comments.map(commentBlock).join("")}
+      <div class="thread-reply">
+        <textarea rows="2" placeholder="Responder…"></textarea>
+        <button class="btn" data-reply="${first?.databaseId ?? ""}">Responder</button>
+      </div>
+    </div>`;
+}
+
+function diffLineRow(file, line, anchored) {
+  if (line.type === "hunk") {
+    return `<tr class="diff-hunk"><td colspan="3">${esc(line.text)}</td></tr>`;
+  }
+  if (line.type === "meta") {
+    return `<tr class="diff-meta"><td colspan="3">${esc(line.text)}</td></tr>`;
+  }
+  const cls = line.type === "add" ? "diff-add" : line.type === "del" ? "diff-del" : "diff-ctx";
+  const sign = line.type === "add" ? "+" : line.type === "del" ? "−" : " ";
+  const commentLine = line.type === "del" ? line.old : line.new;
+  const side = line.type === "del" ? "LEFT" : "RIGHT";
+  const threadsHtml = (anchored.get(`${file.filename}::${line.new}`) || [])
+    .map(threadBlock)
+    .map((html) => `<tr class="diff-thread-row"><td colspan="3">${html}</td></tr>`)
+    .join("");
+  return `
+    <tr class="diff-line ${cls}" data-path="${esc(file.filename)}" data-line="${commentLine ?? ""}" data-side="${side}">
+      <td class="gutter">${line.old ?? ""}</td>
+      <td class="gutter">${line.new ?? ""}<button class="add-comment" title="Comentar esta línea">+</button></td>
+      <td class="code"><span class="sign">${sign}</span>${esc(line.text)}</td>
+    </tr>${threadsHtml}`;
+}
+
+function renderChangesTab() {
+  const files = state.files;
+  if (!files) {
+    $("#tab-body").innerHTML = `<div class="loading">Cargando diff…</div>`;
+    window.pulpo.prFiles(state.repo, state.detailPR.number).then((loaded) => {
+      state.files = loaded;
+      if (state.detailTab === "changes") renderChangesTab();
+    }).catch((err) => {
+      $("#tab-body").innerHTML = `<div class="error-box">${esc(String(err.message || err))}</div>`;
+      notifySelftestOnce();
+    });
+    return;
+  }
+
+  const { map: anchored, orphans } = threadsByAnchor();
+  const statusIcon = { added: "🟢", removed: "🔴", modified: "🟡", renamed: "🔵" };
+  $("#tab-body").innerHTML = `
+    <div class="diff-summary muted">${files.length} ficheros ·
+      <span class="checks-success">+${files.reduce((s, f) => s + f.additions, 0)}</span> /
+      <span class="checks-failure">−${files.reduce((s, f) => s + f.deletions, 0)}</span>
+    </div>
+    ${files
+      .map((file, fi) => {
+        const orphanThreads = (orphans.get(file.filename) || []).map(threadBlock).join("");
+        return `
+        <details class="diff-file" ${fi < 6 ? "open" : ""}>
+          <summary>
+            <span class="status-ico">${statusIcon[file.status] || "⚪"}</span>
+            <span class="diff-path">${esc(file.previousFilename ? `${file.previousFilename} → ` : "")}${esc(file.filename)}</span>
+            <span class="muted"><span class="checks-success">+${file.additions}</span> / <span class="checks-failure">−${file.deletions}</span></span>
+          </summary>
+          ${file.patch
+            ? `<table class="diff-table">${parsePatch(file.patch).map((l) => diffLineRow(file, l, anchored)).join("")}</table>`
+            : `<p class="muted" style="padding:10px 14px">Sin diff disponible (binario o demasiado grande).</p>`}
+          ${orphanThreads ? `<div class="orphan-threads"><div class="section-h">Hilos en versiones anteriores</div>${orphanThreads}</div>` : ""}
+        </details>`;
+      })
+      .join("")}`;
+
+  // comentar en línea
+  $("#tab-body").querySelectorAll(".add-comment").forEach((btn) =>
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const tr = btn.closest("tr");
+      openInlineComposer(tr);
+    }),
+  );
+  // responder hilos
+  $("#tab-body").querySelectorAll("[data-reply]").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const ta = btn.parentElement.querySelector("textarea");
+      const body = ta.value.trim();
+      if (!body || !btn.dataset.reply) return;
+      btn.disabled = true;
+      try {
+        await window.pulpo.replyThread(state.repo, state.detailPR.number, Number(btn.dataset.reply), body);
+        toast("Respuesta publicada", "ok");
+        state.conversation = await window.pulpo.prConversation(state.repo, state.detailPR.number);
+        renderChangesTab();
+      } catch (err) {
+        toast(`No se pudo responder: ${String(err.message || err)}`, "err");
+        btn.disabled = false;
+      }
+    }),
+  );
+  wireExternalLinks();
+  notifySelftestOnce();
+}
+
+function openInlineComposer(tr) {
+  document.querySelectorAll(".inline-composer-row").forEach((row) => row.remove());
+  const { path, line, side } = tr.dataset;
+  if (!line) return;
+  const row = document.createElement("tr");
+  row.className = "inline-composer-row";
+  row.innerHTML = `
+    <td colspan="3">
+      <div class="composer inline">
+        <div class="muted" style="margin-bottom:6px">Comentando <code>${esc(path)}</code> línea ${esc(line)} (${side === "LEFT" ? "versión anterior" : "versión nueva"})</div>
+        <textarea rows="3" placeholder="Tu comentario…"></textarea>
+        <div class="composer-actions">
+          <button class="btn cancel">Cancelar</button>
+          <button class="btn btn-accent send">Comentar</button>
+        </div>
+      </div>
+    </td>`;
+  tr.after(row);
+  row.querySelector("textarea").focus();
+  row.querySelector(".cancel").addEventListener("click", () => row.remove());
+  row.querySelector(".send").addEventListener("click", async () => {
+    const body = row.querySelector("textarea").value.trim();
+    if (!body) return;
+    row.querySelector(".send").disabled = true;
+    try {
+      await window.pulpo.commentInline(state.repo, state.detailPR.number, {
+        body,
+        commitId: state.conversation.headRefOid,
+        path,
+        side,
+        line: Number(line),
+      });
+      toast("Comentario publicado en la línea", "ok");
+      state.conversation = await window.pulpo.prConversation(state.repo, state.detailPR.number);
+      renderChangesTab();
+    } catch (err) {
+      toast(`No se pudo comentar: ${String(err.message || err)}`, "err");
+      row.querySelector(".send").disabled = false;
+    }
+  });
+}
+
+function wireExternalLinks() {
+  detailContent.querySelectorAll(".pr-body a, [data-ext]").forEach((a) =>
+    a.addEventListener("click", (event) => {
+      event.preventDefault();
+      const url = a.dataset.ext || a.href;
+      if (url?.startsWith("http")) window.pulpo.openExternal(url);
+    }),
+  );
+}
+
+/* ============ acciones PR ============ */
 async function updateBranch(pr) {
   const btn = $("#act-update");
   btn.disabled = true;
@@ -335,7 +552,7 @@ async function updateBranch(pr) {
     await window.pulpo.updateBranch(pr.id);
     toast(`#${pr.number}: rama actualizada con rebase`, "ok");
     await refresh();
-    openDetail(pr.number);
+    openDetail(pr.number, state.detailTab);
   } catch (err) {
     toast(`Update falló: ${String(err.message || err)}`, "err");
     btn.disabled = false;
@@ -373,12 +590,7 @@ function confirmMerge(pr) {
         headRefName: pr.headRefName,
         isCrossRepository: pr.isCrossRepository,
       });
-      toast(
-        res.merged
-          ? `#${pr.number} fusionada (merge commit)${res.branchDeleted ? " · rama borrada" : ""}`
-          : `Merge no completado`,
-        res.merged ? "ok" : "err",
-      );
+      toast(res.merged ? `#${pr.number} fusionada (merge commit)${res.branchDeleted ? " · rama borrada" : ""}` : "Merge no completado", res.merged ? "ok" : "err");
       closeDetail();
       await refresh();
     } catch (err) {
@@ -387,7 +599,254 @@ function confirmMerge(pr) {
   });
 }
 
-/* ============ carga de datos ============ */
+/* ============ vista histórico ============ */
+async function enterHistory() {
+  state.view = "history";
+  closeDetail();
+  document.querySelectorAll(".bucket").forEach((b) => b.classList.remove("active"));
+  $("#bucket-history").classList.add("active");
+  await loadHistory();
+}
+
+function historyBranchSpecs() {
+  const enabled = [...state.history.enabled];
+  return enabled.map((name) => ({ name, depth: ["main", "master", "develop"].includes(name) ? 80 : 30 }));
+}
+
+async function loadHistory() {
+  const h = state.history;
+  h.loading = true;
+  renderHistory();
+  try {
+    if (!h.branches.length) {
+      const def = await window.pulpo.defaultBranch(state.repo);
+      const candidates = new Set([def, "develop"]);
+      for (const pr of state.openPrs.slice(0, 10)) {
+        if (!pr.isCrossRepository) candidates.add(pr.headRefName);
+        candidates.add(pr.baseRefName);
+      }
+      h.branches = [...candidates].slice(0, 14);
+      h.enabled = new Set([def, "develop"].filter((b) => h.branches.includes(b)));
+      if (!h.enabled.size) h.enabled = new Set(h.branches.slice(0, 2));
+    }
+    const { branches, commits } = await window.pulpo.historyGraph(state.repo, historyBranchSpecs());
+    h.layout = window.PulpoGraph.computeLayout(commits, branches);
+    h.loading = false;
+    renderHistory();
+  } catch (err) {
+    h.loading = false;
+    list.innerHTML = `<div class="error-box">${esc(String(err.message || err))}</div>`;
+    notifySelftestOnce();
+  }
+}
+
+function renderHistory() {
+  if (state.view !== "history") return;
+  const h = state.history;
+  if (h.loading) {
+    list.innerHTML = `<div class="loading">Tejiendo el grafo…</div>`;
+    return;
+  }
+  if (!h.layout) return;
+
+  const chips = h.branches
+    .map(
+      (name) => `<button class="branch-chip ${h.enabled.has(name) ? "on" : ""}" data-branch="${esc(name)}">${esc(name)}</button>`,
+    )
+    .join("");
+  const { svg, width } = window.PulpoGraph.renderSVG(h.layout);
+  const rowsHtml = h.layout.rows
+    .map((row, i) => {
+      const c = row.commit;
+      const pr = c.associatedPullRequests?.nodes?.[0];
+      const author = c.author?.user?.login || c.author?.name || "?";
+      return `
+      <div class="graph-row ${h.selectedOid === c.oid ? "selected" : ""}" data-oid="${c.oid}" data-row="${i}">
+        ${row.refs.map((r) => `<span class="branch ref-pill">${esc(r)}</span>`).join("")}
+        <span class="graph-msg" title="${esc(c.messageHeadline)}">${esc(c.messageHeadline)}</span>
+        ${pr ? `<button class="pr-pill" data-pr="${pr.number}" title="${esc(pr.title)}">#${pr.number}</button>` : ""}
+        <span class="graph-meta">${esc(author)} · ${timeAgo(c.committedDate)} · <code>${c.abbreviatedOid}</code></span>
+      </div>`;
+    })
+    .join("");
+
+  list.innerHTML = `
+    <div class="history-toolbar">
+      <div class="branch-chips">${chips}</div>
+      <button class="icon-btn" id="history-refresh" title="Recargar grafo">⟳</button>
+    </div>
+    <div class="graph-wrap">
+      <div class="graph-svg" style="width:${width}px">${svg}</div>
+      <div class="graph-rows">${rowsHtml}</div>
+    </div>`;
+
+  list.querySelectorAll(".branch-chip").forEach((chip) =>
+    chip.addEventListener("click", () => {
+      const name = chip.dataset.branch;
+      if (h.enabled.has(name)) h.enabled.delete(name);
+      else h.enabled.add(name);
+      if (!h.enabled.size) h.enabled.add(name);
+      loadHistory();
+    }),
+  );
+  $("#history-refresh").addEventListener("click", () => loadHistory());
+  list.querySelectorAll(".graph-row").forEach((row) =>
+    row.addEventListener("click", () => openCommitPanel(row.dataset.oid)),
+  );
+  list.querySelectorAll(".pr-pill").forEach((pill) =>
+    pill.addEventListener("click", (event) => {
+      event.stopPropagation();
+      exitHistoryToPR(Number(pill.dataset.pr));
+    }),
+  );
+  notifySelftestOnce();
+}
+
+function exitHistoryToPR(number) {
+  state.view = "prs";
+  document.querySelectorAll(".bucket").forEach((b) => b.classList.remove("active"));
+  document.querySelector('[data-bucket="open"]').classList.add("active");
+  state.bucket = "open";
+  refresh().then(() => openDetail(number));
+}
+
+function openCommitPanel(oid) {
+  const h = state.history;
+  h.selectedOid = oid;
+  const row = h.layout.rows.find((r) => r.commit.oid === oid);
+  if (!row) return;
+  const c = row.commit;
+  const pr = c.associatedPullRequests?.nodes?.[0];
+  renderHistory();
+  detailPane.classList.remove("hidden", "wide");
+  detailContent.innerHTML = `
+    <div class="detail-inner">
+      <button class="detail-close" id="detail-close">✕</button>
+      <div class="detail-title">${esc(c.messageHeadline)}</div>
+      <div class="detail-sub">
+        ${row.refs.map((r) => `<span class="branch">${esc(r)}</span>`).join("")}
+        ${row.isMerge ? `<span class="chip chip-merged">merge</span>` : ""}
+        <code>${c.abbreviatedOid}</code>
+      </div>
+      <dl class="meta-grid">
+        <dt>Autor</dt><dd>${esc(c.author?.user?.login || c.author?.name || "?")}</dd>
+        <dt>Fecha</dt><dd>${new Date(c.committedDate).toLocaleString("es-ES")}</dd>
+        <dt>SHA</dt><dd><code>${c.oid}</code></dd>
+        ${pr ? `<dt>PR</dt><dd><button class="pr-pill" id="commit-pr">#${pr.number} · ${esc(pr.title)}</button></dd>` : ""}
+      </dl>
+
+      <div class="section-h">Acciones</div>
+      <div class="actions" style="flex-direction:column;align-items:stretch">
+        <button class="btn" id="cp-copy">📋 Copiar SHA</button>
+        <button class="btn" id="cp-branch">🌱 Crear rama desde aquí…</button>
+        <button class="btn" id="cp-reset">⏪ Mover una rama a este commit…</button>
+        ${pr && pr.state === "MERGED" ? `<button class="btn btn-danger" id="cp-revert">↩️ Revertir PR #${pr.number} (crea PR de revert)</button>` : ""}
+      </div>
+      <p class="muted">“Mover una rama” reescribe la punta de la rama (force). Pulpo te pedirá confirmación escrita; aún así, úsalo sabiendo lo que haces.</p>
+    </div>`;
+
+  $("#detail-close").addEventListener("click", () => {
+    h.selectedOid = null;
+    detailPane.classList.add("hidden");
+    renderHistory();
+  });
+  $("#cp-copy").addEventListener("click", () => copyText(c.oid));
+  $("#cp-branch").addEventListener("click", () => createBranchModal(c));
+  $("#cp-reset").addEventListener("click", () => resetBranchModal(c));
+  $("#commit-pr")?.addEventListener("click", () => exitHistoryToPR(pr.number));
+  $("#cp-revert")?.addEventListener("click", () => revertPRModal(pr));
+}
+
+function createBranchModal(commit) {
+  const root = $("#modal-root");
+  root.innerHTML = `
+    <div class="modal-backdrop" id="modal-backdrop">
+      <div class="modal">
+        <h3>🌱 Crear rama en <code>${commit.abbreviatedOid}</code></h3>
+        <input type="text" id="nb-name" placeholder="feature/mi-rama" style="width:100%;margin-top:8px" class="modal-input" />
+        <div class="modal-actions">
+          <button class="btn" id="modal-cancel">Cancelar</button>
+          <button class="btn btn-accent" id="modal-confirm">Crear rama</button>
+        </div>
+      </div>
+    </div>`;
+  $("#modal-cancel").addEventListener("click", () => (root.innerHTML = ""));
+  $("#modal-confirm").addEventListener("click", async () => {
+    const name = $("#nb-name").value.trim();
+    if (!name) return;
+    root.innerHTML = "";
+    try {
+      await window.pulpo.createBranch(state.repo, name, commit.oid);
+      toast(`Rama ${name} creada en ${commit.abbreviatedOid}`, "ok");
+      state.history.branches = [];
+      loadHistory();
+    } catch (err) {
+      toast(`No se pudo crear: ${String(err.message || err)}`, "err");
+    }
+  });
+}
+
+function resetBranchModal(commit) {
+  const root = $("#modal-root");
+  const options = state.history.branches
+    .map((b) => `<option value="${esc(b)}">${esc(b)}</option>`)
+    .join("");
+  root.innerHTML = `
+    <div class="modal-backdrop" id="modal-backdrop">
+      <div class="modal">
+        <h3>⏪ Mover rama a <code>${commit.abbreviatedOid}</code></h3>
+        <p class="muted">Esto hace un <b>force update</b> de la referencia: la rama pasará a apuntar a este commit y lo que tenga por delante se pierde de la rama. Las ramas protegidas lo rechazarán.</p>
+        <select id="rb-branch" class="modal-input" style="width:100%;margin-top:8px">${options}</select>
+        <input type="text" id="rb-confirm" placeholder="Escribe el nombre exacto de la rama para confirmar" style="width:100%;margin-top:8px" class="modal-input" />
+        <div class="modal-actions">
+          <button class="btn" id="modal-cancel">Cancelar</button>
+          <button class="btn btn-danger" id="modal-confirm">Mover rama (force)</button>
+        </div>
+      </div>
+    </div>`;
+  $("#modal-cancel").addEventListener("click", () => (root.innerHTML = ""));
+  $("#modal-confirm").addEventListener("click", async () => {
+    const branch = $("#rb-branch").value;
+    const typed = $("#rb-confirm").value.trim();
+    if (typed !== branch) return toast("El nombre no coincide: no muevo nada", "err");
+    root.innerHTML = "";
+    try {
+      await window.pulpo.forceUpdateBranch(state.repo, branch, commit.oid);
+      toast(`${branch} ahora apunta a ${commit.abbreviatedOid}`, "ok");
+      loadHistory();
+    } catch (err) {
+      toast(`Force update falló: ${String(err.message || err)}`, "err");
+    }
+  });
+}
+
+function revertPRModal(pr) {
+  const root = $("#modal-root");
+  root.innerHTML = `
+    <div class="modal-backdrop" id="modal-backdrop">
+      <div class="modal">
+        <h3>↩️ Revertir PR #${pr.number}</h3>
+        <p>Crea una <b>PR de revert</b> (no toca la rama directamente). La revisas y la fusionas como cualquier otra.</p>
+        <div class="modal-actions">
+          <button class="btn" id="modal-cancel">Cancelar</button>
+          <button class="btn btn-danger" id="modal-confirm">Crear PR de revert</button>
+        </div>
+      </div>
+    </div>`;
+  $("#modal-cancel").addEventListener("click", () => (root.innerHTML = ""));
+  $("#modal-confirm").addEventListener("click", async () => {
+    root.innerHTML = "";
+    try {
+      const revert = await window.pulpo.revertPR(state.repo, pr.number);
+      toast(`PR de revert creada: #${revert.number}`, "ok");
+      exitHistoryToPR(revert.number);
+    } catch (err) {
+      toast(`Revert falló: ${String(err.message || err)}`, "err");
+    }
+  });
+}
+
+/* ============ datos ============ */
 function bucketStates() {
   if (state.bucket === "merged") return ["MERGED"];
   if (state.bucket === "closed") return ["CLOSED"];
@@ -396,6 +855,7 @@ function bucketStates() {
 
 async function refresh() {
   if (!state.repo) return;
+  if (state.view === "history") return loadHistory();
   state.loading = true;
   renderList();
   try {
@@ -432,7 +892,6 @@ function openSettings() {
     <div class="settings-inner">
       <button class="btn" id="settings-back">← Volver</button>
       <h2 style="margin-top:14px">Ajustes</h2>
-
       <div class="settings-card">
         <h4>Repositorios</h4>
         <div id="repo-lines">
@@ -443,16 +902,14 @@ function openSettings() {
           <button class="btn btn-accent" id="add-repo">Añadir</button>
         </div>
       </div>
-
       <div class="settings-card">
         <h4>Token de GitHub</h4>
-        <p class="muted">Origen actual: <b>${esc(state.authSource || "ninguno")}</b>. Se intenta <code>GITHUB_TOKEN</code> → <code>gh auth token</code> → token manual. Solo guarda uno manual si no usas gh CLI.</p>
+        <p class="muted">Origen actual: <b>${esc(state.authSource || "ninguno")}</b>. Orden: <code>GITHUB_TOKEN</code> → <code>gh auth token</code> → token manual.</p>
         <div class="add-repo">
           <input type="password" id="manual-token" placeholder="${cfg.hasManualToken ? "•••••••• (guardado)" : "ghp_… (opcional)"}" />
           <button class="btn" id="save-token">Guardar</button>
         </div>
       </div>
-
       <div class="settings-card">
         <h4>Refresco automático</h4>
         <div class="add-repo">
@@ -460,7 +917,6 @@ function openSettings() {
           <span class="muted" style="align-self:center">segundos</span>
         </div>
       </div>
-
       <div class="settings-card">
         <h4>Reglas de la casa</h4>
         <p class="muted">pull → <b>rebase</b> · merge → <b>merge commit</b> · squash → <b style="text-decoration:line-through">jamás</b>. No configurable. A propósito.</p>
@@ -519,12 +975,13 @@ async function boot() {
   } else {
     $("#me").innerHTML = "";
     list.innerHTML = `<div class="error-box">Sin token de GitHub válido.<br>
-      <span class="muted">Haz <code>gh auth login</code> en una terminal, exporta <code>GITHUB_TOKEN</code>, o guarda un token en Ajustes ⚙.</span></div>`;
+      <span class="muted">Haz <code>gh auth login</code>, exporta <code>GITHUB_TOKEN</code>, o guarda un token en Ajustes ⚙.</span></div>`;
     notifySelftestOnce();
     return;
   }
   await refresh();
   schedulePoll();
+  if (IS_SELFTEST && SELFTEST_ROUTE === "history") enterHistory();
 }
 
 $("#refresh").addEventListener("click", refresh);
@@ -532,24 +989,28 @@ $("#settings-btn").addEventListener("click", openSettings);
 $("#repo-select").addEventListener("change", (event) => {
   state.repo = event.target.value;
   state.openPrs = [];
+  state.history = { branches: [], enabled: new Set(), layout: null, rows: [], loading: false, selectedOid: null };
   closeDetail();
-  refresh();
+  if (state.view === "history") loadHistory();
+  else refresh();
 });
 $("#search").addEventListener("input", (event) => {
   state.search = event.target.value;
   renderList();
 });
-document.querySelectorAll(".bucket").forEach((btn) =>
+document.querySelectorAll(".bucket[data-bucket]").forEach((btn) =>
   btn.addEventListener("click", () => {
     document.querySelectorAll(".bucket").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
+    state.view = "prs";
     state.bucket = btn.dataset.bucket;
     closeDetail();
     refresh();
   }),
 );
+$("#bucket-history").addEventListener("click", enterHistory);
 document.addEventListener("keydown", (event) => {
-  if (event.key === "r" && !event.metaKey && document.activeElement?.tagName !== "INPUT") refresh();
+  if (event.key === "r" && !event.metaKey && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") refresh();
   if (event.key === "Escape") closeDetail();
 });
 
