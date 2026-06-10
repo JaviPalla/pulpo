@@ -59,23 +59,36 @@ No configurables. A propósito.
   `h` histórico · `R` refrescar · `Esc` cerrar.
 - Modo claro/oscuro según el sistema. UI en español.
 
-## Instalar y ejecutar
+## Puesta en marcha (2 minutos)
 
 ```bash
 git clone https://github.com/JesusGR4/pulpo && cd pulpo
 npm install
+npm run doctor   # te dice exactamente qué falta y cómo arreglarlo
 npm start
 ```
 
-### Token de GitHub
+`npm run doctor` comprueba Node, dependencias, GitHub e IA, con el comando de arreglo para
+cada cosa que falte. Si arrancas sin GitHub conectado, la propia app te recibe con una
+pantalla de configuración guiada y botón de reintento.
+
+### 1. GitHub (necesario)
 
 Pulpo no guarda tu token salvo que tú lo pidas. Orden de resolución:
 
 1. Variable de entorno `GITHUB_TOKEN`
-2. `gh auth token` (GitHub CLI — lo habitual)
+2. `gh auth token` (GitHub CLI — lo habitual): `brew install gh && gh auth login`
 3. Token manual desde Ajustes ⚙ (queda en `~/Library/Application Support/pulpo/config.json`, permisos 600)
 
 El token vive solo en el proceso principal: el renderer va sandboxed con CSP estricta y habla por IPC.
+
+### 2. Claude (opcional — para 🤖 Review con IA)
+
+Sin configurar nada: si tienes [Claude Code](https://claude.com/claude-code) instalado y has
+hecho login alguna vez, Pulpo usa esa sesión automáticamente (`claude -p` headless). Si
+prefieres la API directa, exporta `ANTHROPIC_API_KEY` y Pulpo usará el SDK oficial con
+salida estructurada. En Ajustes ⚙ hay un botón **"Probar conexión con Claude"** para
+verificarlo desde la app.
 
 ### Empaquetar como .app (opcional)
 
@@ -95,7 +108,19 @@ scripts/         make-icon.js (el icono se renderiza con el propio Electron)
 ```
 
 `npm run selftest` arranca la app contra la API real, captura la pantalla en
-`/tmp/pulpo-selftest.png` y sale — así se verifican los cambios de UI.
+`/tmp/pulpo-selftest.png` y sale — así se verifican los cambios de UI. `npm test` corre
+las tres vistas (lista, cambios, histórico) y comprueba que todas renderizan.
+
+## Atajos
+
+| Tecla | Acción |
+|---|---|
+| `⌘K` | Paleta de comandos |
+| `j` / `k` + `Enter` | Navegar la lista y abrir |
+| `1`–`6` | Cambiar de bucket |
+| `h` | Histórico (grafo) |
+| `r` | Refrescar |
+| `?` | Chuleta de atajos |
 
 ## Licencia
 

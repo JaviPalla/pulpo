@@ -388,7 +388,7 @@ function renderList() {
             <span class="arrow">→</span>
             <span class="branch" title="${esc(pr.baseRefName)}">${esc(pr.baseRefName)}</span>
           </span>
-          <span class="meta-mini">${esc(pr.author?.login || "?")} · ${timeAgo(pr.updatedAt)} · 💬 ${pr.comments?.totalCount ?? 0}${state.draftKeys.has(`${pr.repository?.nameWithOwner || state.repo}#${pr.number}`) ? " · 📝 borradores" : ""}</span>
+          <span class="meta-mini">${esc(pr.author?.login || "?")} · ${timeAgo(pr.updatedAt)} · <span class="checks-success">+${pr.additions ?? 0}</span>/<span class="checks-failure">−${pr.deletions ?? 0}</span> · 💬 ${pr.comments?.totalCount ?? 0}${state.draftKeys.has(`${pr.repository?.nameWithOwner || state.repo}#${pr.number}`) ? " · 📝 borradores" : ""}</span>
         </div>
       </article>`,
     )
@@ -476,6 +476,13 @@ function renderDetail() {
                 title="${esc(blockReason || "Merge con merge commit")}">⇅ Merge (merge commit)</button>
         <button class="btn btn-ai" id="act-ai" ${pr.state === "OPEN" ? "" : "disabled"}
                 title="Genera comentarios de review (en inglés) como borradores: nada se publica hasta que tú lo digas">🤖 Review con IA</button>
+        <button class="btn" id="act-approve" ${pr.state === "OPEN" && pr.author?.login !== state.me?.login ? "" : "disabled"}
+                title="${pr.author?.login === state.me?.login ? "No puedes aprobar tu propia PR" : "Aprobar sin comentarios (pide confirmación)"}">✅ Aprobar</button>
+      </div>
+      <div class="copy-row">
+        <button class="mini-btn" id="copy-branch" title="Copiar nombre de la rama">📋 ${esc(pr.headRefName)}</button>
+        <button class="mini-btn" id="copy-checkout" title="Copiar comando para traerte la PR en local">⬇ gh pr checkout ${pr.number}</button>
+        <button class="mini-btn" id="copy-url" title="Copiar URL de la PR">🔗 URL</button>
       </div>
       ${blockReason && pr.state === "OPEN" ? `<p class="muted">⚠️ ${esc(blockReason)}</p>` : ""}
 
@@ -496,6 +503,10 @@ function renderDetail() {
   $("#act-update").addEventListener("click", () => updateBranch(pr));
   $("#act-merge").addEventListener("click", () => confirmMerge(pr));
   $("#act-ai").addEventListener("click", () => generateAiReview(pr));
+  $("#act-approve").addEventListener("click", () => confirmApprove(pr));
+  $("#copy-branch").addEventListener("click", () => copyText(pr.headRefName));
+  $("#copy-checkout").addEventListener("click", () => copyText(`gh pr checkout ${pr.number}`));
+  $("#copy-url").addEventListener("click", () => copyText(pr.url));
   wireDraftsBar();
   detailContent.querySelectorAll(".tab").forEach((tabBtn) =>
     tabBtn.addEventListener("click", () => {
@@ -759,6 +770,37 @@ async function updateBranch(pr) {
     btn.disabled = false;
     btn.textContent = "⤴ Update branch (rebase)";
   }
+}
+
+function confirmApprove(pr) {
+  const root = $("#modal-root");
+  root.innerHTML = `
+    <div class="modal-backdrop" id="modal-backdrop">
+      <div class="modal">
+        <h3>✅ Aprobar #${pr.number}</h3>
+        <p>${esc(pr.title)}</p>
+        <p class="muted">Publica una review de aprobación sin comentarios. Si tienes borradores pendientes, no se tocan.</p>
+        <div class="modal-actions">
+          <button class="btn" id="modal-cancel">Cancelar</button>
+          <button class="btn btn-primary" id="modal-confirm">Aprobar</button>
+        </div>
+      </div>
+    </div>`;
+  $("#modal-cancel").addEventListener("click", () => (root.innerHTML = ""));
+  $("#modal-backdrop").addEventListener("click", (event) => {
+    if (event.target.id === "modal-backdrop") root.innerHTML = "";
+  });
+  $("#modal-confirm").addEventListener("click", async () => {
+    root.innerHTML = "";
+    try {
+      await window.pulpo.submitReview(detailRepo(), pr.number, { event: "APPROVE" });
+      toast(`#${pr.number} aprobada ✅`, "ok");
+      await refresh();
+      openDetail(pr.number, state.detailTab);
+    } catch (err) {
+      toast(`No se pudo aprobar: ${String(err.message || err)}`, "err");
+    }
+  });
 }
 
 function confirmMerge(pr) {
@@ -1186,6 +1228,11 @@ function openSettings() {
         </div>
       </div>
       <div class="settings-card">
+        <h4>IA (Review con IA 🤖)</h4>
+        <p class="muted" id="ai-status-line">Comprobando backend…</p>
+        <button class="btn" id="test-ai">Probar conexión con Claude</button>
+      </div>
+      <div class="settings-card">
         <h4>Refresco automático</h4>
         <div class="add-repo">
           <input type="number" id="poll-seconds" min="15" value="${cfg.pollSeconds}" />
@@ -1227,6 +1274,73 @@ function openSettings() {
     toast("Token guardado", "ok");
     boot();
   });
+
+  window.pulpo.aiStatus().then((s) => {
+    const line = $("#ai-status-line");
+    if (line) line.innerHTML = s.backend
+      ? `✓ <b>${esc(s.backend)}</b> — ${esc(s.detail)}`
+      : `✗ ${esc(s.detail)}`;
+  }).catch(() => {});
+  $("#test-ai").addEventListener("click", async () => {
+    const btn = $("#test-ai");
+    btn.disabled = true;
+    btn.textContent = "Probando… (puede tardar ~30s)";
+    try {
+      const result = await window.pulpo.aiPing();
+      toast(result.ok ? `IA OK vía ${result.backend}` : `IA no disponible: ${result.detail}`, result.ok ? "ok" : "err");
+      const line = $("#ai-status-line");
+      if (line) line.innerHTML = `${result.ok ? "✓" : "✗"} <b>${esc(result.backend || "sin backend")}</b> — ${esc(result.detail)}`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Probar conexión con Claude";
+    }
+  });
+}
+
+/* ============ bienvenida / onboarding ============ */
+async function renderWelcome() {
+  const aiStatus = await window.pulpo.aiStatus().catch(() => ({ backend: null, detail: "" }));
+  const aiOk = Boolean(aiStatus.backend);
+  list.innerHTML = `
+    <div class="welcome">
+      <div class="welcome-logo">🐙</div>
+      <h2>Bienvenido a Pulpo</h2>
+      <p class="muted">Dos pasos y listo. Pulpo no guarda credenciales: usa las sesiones que ya tienes.</p>
+
+      <div class="setup-step bad">
+        <div class="setup-mark">1</div>
+        <div>
+          <b>Conecta GitHub</b> <span class="chip chip-closed">pendiente</span>
+          <p class="muted">La vía fácil es el CLI oficial de GitHub — Pulpo coge el token de ahí:</p>
+          <pre class="setup-cmd">brew install gh && gh auth login</pre>
+          <p class="muted">Alternativas: exporta <code>GITHUB_TOKEN</code>, o pega un token en Ajustes ⚙.</p>
+        </div>
+      </div>
+
+      <div class="setup-step ${aiOk ? "ok" : ""}">
+        <div class="setup-mark">2</div>
+        <div>
+          <b>Conecta Claude</b> <span class="chip ${aiOk ? "chip-open" : "chip-draft"}">${aiOk ? "listo" : "opcional"}</span>
+          <p class="muted">${aiOk
+            ? `Detectado: ${esc(aiStatus.detail)} — el botón 🤖 Review con IA ya funciona.`
+            : `Para el botón 🤖 Review con IA: instala <a href="#" data-ext="https://claude.com/claude-code">Claude Code</a> y ábrelo una vez para autenticarte (Pulpo usará tu sesión), o exporta <code>ANTHROPIC_API_KEY</code>.`}</p>
+        </div>
+      </div>
+
+      <div class="welcome-actions">
+        <button class="btn btn-accent" id="welcome-retry">He hecho login — Reintentar</button>
+        <button class="btn" id="welcome-settings">Abrir Ajustes ⚙</button>
+      </div>
+      <p class="muted small-print">¿Dudas? <code>npm run doctor</code> en la terminal diagnostica todo esto por ti.</p>
+    </div>`;
+  $("#welcome-retry").addEventListener("click", boot);
+  $("#welcome-settings").addEventListener("click", openSettings);
+  list.querySelectorAll("[data-ext]").forEach((a) =>
+    a.addEventListener("click", (event) => {
+      event.preventDefault();
+      window.pulpo.openExternal(a.dataset.ext);
+    }),
+  );
 }
 
 /* ============ arranque ============ */
@@ -1263,8 +1377,7 @@ async function boot() {
     $("#me").innerHTML = `<img src="${esc(auth.avatarUrl)}" alt="" /> ${esc(auth.login)}`;
   } else {
     $("#me").innerHTML = "";
-    list.innerHTML = `<div class="error-box">Sin token de GitHub válido.<br>
-      <span class="muted">Haz <code>gh auth login</code>, exporta <code>GITHUB_TOKEN</code>, o guarda un token en Ajustes ⚙.</span></div>`;
+    await renderWelcome();
     notifySelftestOnce();
     return;
   }
@@ -1399,6 +1512,32 @@ function moveCursor(delta) {
   rows[state.cursor].scrollIntoView({ block: "nearest" });
 }
 
+function openCheatsheet() {
+  const root = $("#modal-root");
+  const rows = [
+    ["⌘K", "Paleta de comandos (PRs, repos, acciones)"],
+    ["j / k", "Moverse por la lista"],
+    ["Enter", "Abrir la PR seleccionada"],
+    ["1 – 6", "Abiertas · Mías · Para revisar · Borradores · Fusionadas · Cerradas"],
+    ["h", "Histórico (grafo de ramas)"],
+    ["r", "Refrescar"],
+    ["Esc", "Cerrar el panel"],
+    ["?", "Esta chuleta"],
+  ];
+  root.innerHTML = `
+    <div class="modal-backdrop" id="modal-backdrop">
+      <div class="modal">
+        <h3>⌨️ Atajos de teclado</h3>
+        <table class="cheatsheet">${rows.map(([key, what]) => `<tr><td><kbd>${key}</kbd></td><td>${what}</td></tr>`).join("")}</table>
+        <div class="modal-actions"><button class="btn" id="modal-cancel">Cerrar</button></div>
+      </div>
+    </div>`;
+  $("#modal-cancel").addEventListener("click", () => (root.innerHTML = ""));
+  $("#modal-backdrop").addEventListener("click", (event) => {
+    if (event.target.id === "modal-backdrop") root.innerHTML = "";
+  });
+}
+
 document.addEventListener("keydown", (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
     event.preventDefault();
@@ -1407,6 +1546,7 @@ document.addEventListener("keydown", (event) => {
   }
   const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
   if (typing) return;
+  if (event.key === "?") return openCheatsheet();
   if (event.key === "Escape") return closeDetail();
   if (event.key === "r") return refresh();
   if (event.key === "j") return moveCursor(1);

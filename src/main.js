@@ -105,6 +105,8 @@ function wireIpc() {
   );
 
   ipcMain.handle("ai:review", async (_event, { title, body, files }) => ai.generateReview({ title, body, files }));
+  ipcMain.handle("ai:status", () => ai.backendStatus());
+  ipcMain.handle("ai:ping", async () => ai.ping());
 
   ipcMain.handle("drafts:list", (_event, { key }) => drafts.listFor(key));
   ipcMain.handle("drafts:save", (_event, { key, items }) => drafts.saveFor(key, items));

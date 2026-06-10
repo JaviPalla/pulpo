@@ -6,6 +6,8 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
+    "doctor": "node scripts/doctor.js",
+    "test": "node scripts/selftest-all.js",
     "selftest": "electron . --selftest",
     "icon": "electron scripts/make-icon.js"
   },

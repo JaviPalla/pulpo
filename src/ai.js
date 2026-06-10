@@ -178,4 +178,42 @@ function normalize(review) {
   };
 }
 
-module.exports = { generateReview };
+/** Estado del backend de IA, para onboarding y ajustes. */
+function backendStatus() {
+  if (process.env.ANTHROPIC_API_KEY) {
+    return { backend: "anthropic-sdk", detail: "ANTHROPIC_API_KEY presente — SDK oficial (claude-opus-4-8)" };
+  }
+  const cliPath = claudeCliPath();
+  if (cliPath) {
+    let version = "";
+    try {
+      version = execFileSync(cliPath, ["--version"], { encoding: "utf8", timeout: 5000 }).trim().split("\n")[0];
+    } catch {
+      /* la versión es decorativa */
+    }
+    return { backend: "claude-cli", detail: `Claude Code CLI en ${cliPath}${version ? ` (${version})` : ""}` };
+  }
+  return { backend: null, detail: "Sin backend: exporta ANTHROPIC_API_KEY o instala Claude Code y haz login" };
+}
+
+/** Prueba ligera del backend (para el botón "Probar IA" de Ajustes). */
+async function ping() {
+  const status = backendStatus();
+  if (!status.backend) return { ...status, ok: false };
+  try {
+    if (status.backend === "anthropic-sdk") {
+      const Anthropic = require("@anthropic-ai/sdk").default;
+      await new Anthropic().models.retrieve(MODEL);
+      return { ...status, ok: true };
+    }
+    const result = await generateViaCli(
+      'Reply with ONLY this JSON and nothing else: {"ok": true}',
+      claudeCliPath(),
+    );
+    return { ...status, ok: result.ok === true };
+  } catch (err) {
+    return { ...status, ok: false, detail: `${status.detail} — fallo: ${String(err.message || err).slice(0, 200)}` };
+  }
+}
+
+module.exports = { generateReview, backendStatus, ping };

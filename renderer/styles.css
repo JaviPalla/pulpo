@@ -477,6 +477,57 @@ body {
 .draft-card.ai .draft-head { color: var(--purple); }
 .btn-ai { border-color: var(--purple); color: var(--purple); }
 .btn-ai:hover:not(:disabled) { background: var(--purple-bg); }
+
+/* ---------- bienvenida / onboarding ---------- */
+.welcome { max-width: 560px; margin: 40px auto; text-align: left; }
+.welcome-logo { font-size: 56px; text-align: center; }
+.welcome h2 { text-align: center; margin: 8px 0 4px; }
+.welcome > .muted { text-align: center; margin-bottom: 22px; }
+.setup-step {
+  display: flex; gap: 14px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin: 10px 0;
+}
+.setup-step.ok { border-color: var(--green); }
+.setup-step.bad { border-color: var(--red); }
+.setup-mark {
+  width: 26px; height: 26px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 13px;
+  background: var(--gray-bg); border-radius: 50%;
+}
+.setup-cmd {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+  background: var(--gray-bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; margin: 8px 0;
+  user-select: all;
+}
+.setup-step a { color: var(--accent); }
+.welcome-actions { display: flex; gap: 8px; justify-content: center; margin-top: 18px; }
+.small-print { text-align: center; margin-top: 14px; font-size: 11px; }
+
+/* ---------- copy row + cheatsheet ---------- */
+.copy-row { display: flex; gap: 6px; flex-wrap: wrap; margin: -4px 0 10px; }
+.mini-btn {
+  font: inherit; font-size: 11px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--text-muted);
+  background: var(--gray-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px; padding: 3px 8px; cursor: pointer;
+  max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mini-btn:hover { color: var(--text); border-color: var(--accent); }
+.cheatsheet { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.cheatsheet td { padding: 5px 8px; border: none; }
+.cheatsheet kbd {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px;
+  background: var(--gray-bg); border: 1px solid var(--border);
+  border-bottom-width: 2px; border-radius: 5px; padding: 2px 7px;
+}
 .draft-head { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: var(--yellow); }
 .draft-del { margin-left: auto; background: transparent; border: none; cursor: pointer; font-size: 13px; opacity: 0.7; }
 .draft-del:hover { opacity: 1; }
