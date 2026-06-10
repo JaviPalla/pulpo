@@ -25,6 +25,8 @@ const state = {
   selftestNotified: false,
   selftestOpenedDetail: false,
   history: { branches: [], enabled: new Set(), layout: null, rows: [], loading: false, selectedOid: null },
+  prSnapshot: null, // nº → {reviewDecision, checks, reviewMe} para detectar cambios y notificar
+  cursor: -1, // selección con teclado (j/k) en la lista
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -960,6 +962,50 @@ function revertPRModal(pr) {
   });
 }
 
+/* ============ notificaciones (estilo Gitify) ============ */
+function checksStateOf(pr) {
+  return pr.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state || "NONE";
+}
+
+function reviewRequestedToMe(pr) {
+  return (pr.reviewRequests?.nodes || []).some((n) => n.requestedReviewer?.login === state.me?.login);
+}
+
+function detectAndNotify(openPrs) {
+  const login = state.me?.login;
+  const snapshot = new Map();
+  for (const pr of openPrs) {
+    snapshot.set(pr.number, {
+      reviewDecision: pr.reviewDecision,
+      checks: checksStateOf(pr),
+      reviewMe: reviewRequestedToMe(pr),
+      title: pr.title,
+      mine: pr.author?.login === login,
+    });
+  }
+  const previous = state.prSnapshot;
+  state.prSnapshot = snapshot;
+  window.pulpo.dockBadge(String([...snapshot.values()].filter((s) => s.reviewMe).length || ""));
+  if (!previous) return; // primera carga: sin spam
+
+  for (const [number, now] of snapshot) {
+    const before = previous.get(number);
+    if (now.reviewMe && !(before?.reviewMe)) {
+      window.pulpo.notify(`Te piden review · #${number}`, now.title);
+    }
+    if (!before || !now.mine) continue;
+    if (now.reviewDecision === "APPROVED" && before.reviewDecision !== "APPROVED") {
+      window.pulpo.notify(`✅ Aprobada · #${number}`, now.title);
+    }
+    if (now.reviewDecision === "CHANGES_REQUESTED" && before.reviewDecision !== "CHANGES_REQUESTED") {
+      window.pulpo.notify(`± Cambios pedidos · #${number}`, now.title);
+    }
+    if (["FAILURE", "ERROR"].includes(now.checks) && !["FAILURE", "ERROR"].includes(before.checks)) {
+      window.pulpo.notify(`✗ Checks en rojo · #${number}`, now.title);
+    }
+  }
+}
+
 /* ============ datos ============ */
 function bucketStates() {
   if (state.bucket === "merged") return ["MERGED"];
@@ -975,8 +1021,10 @@ async function refresh() {
   try {
     const prs = await window.pulpo.listPRs(state.repo, bucketStates());
     state.prs = prs;
-    if (bucketStates()[0] === "OPEN") state.openPrs = prs;
-    else if (!state.openPrs.length) {
+    if (bucketStates()[0] === "OPEN") {
+      state.openPrs = prs;
+      detectAndNotify(prs);
+    } else if (!state.openPrs.length) {
       window.pulpo.listPRs(state.repo, ["OPEN"]).then((open) => {
         state.openPrs = open;
         renderCounts();
@@ -1123,9 +1171,128 @@ document.querySelectorAll(".bucket[data-bucket]").forEach((btn) =>
   }),
 );
 $("#bucket-history").addEventListener("click", enterHistory);
+/* ============ paleta de comandos (⌘K) ============ */
+function paletteEntries() {
+  const entries = [];
+  for (const pr of state.openPrs) {
+    entries.push({
+      label: `#${pr.number} ${pr.title}`,
+      hint: `${pr.headRefName} → ${pr.baseRefName}`,
+      run: () => exitHistoryToPR(pr.number),
+    });
+  }
+  entries.push({ label: "Ir a: Histórico", hint: "grafo de ramas", run: enterHistory });
+  for (const [bucket, label] of [["open", "Abiertas"], ["mine", "Mías"], ["review", "Para revisar"], ["draft", "Borradores"], ["merged", "Fusionadas"], ["closed", "Cerradas"]]) {
+    entries.push({ label: `Ir a: ${label}`, hint: "bucket", run: () => switchBucket(bucket) });
+  }
+  for (const repo of state.config?.repos || []) {
+    entries.push({ label: `Repo: ${repo}`, hint: "cambiar repositorio", run: () => switchRepo(repo) });
+  }
+  entries.push({ label: "Refrescar", hint: "R", run: refresh });
+  entries.push({ label: "Ajustes", hint: "⚙", run: openSettings });
+  return entries;
+}
+
+function switchBucket(bucket) {
+  state.view = "prs";
+  state.bucket = bucket;
+  document.querySelectorAll(".bucket").forEach((b) => b.classList.remove("active"));
+  document.querySelector(`[data-bucket="${bucket}"]`)?.classList.add("active");
+  closeDetail();
+  refresh();
+}
+
+function switchRepo(repo) {
+  state.repo = repo;
+  state.openPrs = [];
+  state.prSnapshot = null;
+  state.history = { branches: [], enabled: new Set(), layout: null, rows: [], loading: false, selectedOid: null };
+  renderRepoSelect();
+  closeDetail();
+  if (state.view === "history") loadHistory();
+  else refresh();
+}
+
+function openPalette() {
+  const root = $("#modal-root");
+  let results = [];
+  let cursor = 0;
+  root.innerHTML = `
+    <div class="modal-backdrop" id="palette-backdrop">
+      <div class="palette">
+        <input type="text" id="palette-input" placeholder="Busca PRs, repos o acciones…  (Esc para cerrar)" autocomplete="off" />
+        <div id="palette-results"></div>
+      </div>
+    </div>`;
+  const input = $("#palette-input");
+  const resultsBox = $("#palette-results");
+
+  const renderResults = () => {
+    const q = input.value.trim().toLowerCase();
+    results = paletteEntries().filter((e) => !q || `${e.label} ${e.hint}`.toLowerCase().includes(q)).slice(0, 12);
+    cursor = Math.min(cursor, Math.max(0, results.length - 1));
+    resultsBox.innerHTML = results
+      .map(
+        (e, i) => `<div class="palette-item ${i === cursor ? "active" : ""}" data-i="${i}">
+          <span>${esc(e.label)}</span><span class="muted">${esc(e.hint)}</span>
+        </div>`,
+      )
+      .join("") || `<div class="palette-item muted">Sin resultados</div>`;
+    resultsBox.querySelectorAll(".palette-item[data-i]").forEach((el) =>
+      el.addEventListener("click", () => {
+        root.innerHTML = "";
+        results[Number(el.dataset.i)]?.run();
+      }),
+    );
+  };
+
+  input.addEventListener("input", () => { cursor = 0; renderResults(); });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") { cursor = Math.min(cursor + 1, results.length - 1); renderResults(); event.preventDefault(); }
+    if (event.key === "ArrowUp") { cursor = Math.max(cursor - 1, 0); renderResults(); event.preventDefault(); }
+    if (event.key === "Enter") { const entry = results[cursor]; root.innerHTML = ""; entry?.run(); }
+    if (event.key === "Escape") root.innerHTML = "";
+  });
+  $("#palette-backdrop").addEventListener("click", (event) => {
+    if (event.target.id === "palette-backdrop") root.innerHTML = "";
+  });
+  renderResults();
+  input.focus();
+}
+
+/* ============ atajos de teclado ============ */
+function visiblePRRows() {
+  return [...list.querySelectorAll(".pr-row")];
+}
+
+function moveCursor(delta) {
+  const rows = visiblePRRows();
+  if (!rows.length) return;
+  state.cursor = Math.max(0, Math.min(rows.length - 1, state.cursor + delta));
+  rows.forEach((r, i) => r.classList.toggle("cursor", i === state.cursor));
+  rows[state.cursor].scrollIntoView({ block: "nearest" });
+}
+
 document.addEventListener("keydown", (event) => {
-  if (event.key === "r" && !event.metaKey && document.activeElement?.tagName !== "INPUT" && document.activeElement?.tagName !== "TEXTAREA") refresh();
-  if (event.key === "Escape") closeDetail();
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    openPalette();
+    return;
+  }
+  const typing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
+  if (typing) return;
+  if (event.key === "Escape") return closeDetail();
+  if (event.key === "r") return refresh();
+  if (event.key === "j") return moveCursor(1);
+  if (event.key === "k") return moveCursor(-1);
+  if (event.key === "Enter" && state.view === "prs" && state.cursor >= 0) {
+    const row = visiblePRRows()[state.cursor];
+    if (row) openDetail(Number(row.dataset.number));
+    return;
+  }
+  if (event.key === "h") return enterHistory();
+  const bucketByDigit = { 1: "open", 2: "mine", 3: "review", 4: "draft", 5: "merged", 6: "closed" };
+  if (bucketByDigit[event.key]) switchBucket(bucketByDigit[event.key]);
 });
 
 boot();

@@ -25,5 +25,7 @@ contextBridge.exposeInMainWorld("pulpo", {
   forceUpdateBranch: (repo, branch, sha) => ipcRenderer.invoke("git:forceUpdate", { repo, branch, sha }),
   revertPR: (repo, number) => ipcRenderer.invoke("pr:revert", { repo, number }),
   openExternal: (url) => ipcRenderer.invoke("shell:open", url),
+  notify: (title, body) => ipcRenderer.invoke("notify", { title, body }),
+  dockBadge: (text) => ipcRenderer.invoke("dock:badge", text),
   selftestRenderComplete: () => ipcRenderer.send("selftest:render-complete"),
 });

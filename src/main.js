@@ -2,7 +2,7 @@
 
 const path = require("path");
 const fs = require("fs");
-const { app, BrowserWindow, ipcMain, shell, nativeTheme } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, nativeTheme, Notification } = require("electron");
 const config = require("./config");
 const drafts = require("./drafts");
 const github = require("./github");
@@ -121,6 +121,13 @@ function wireIpc() {
 
   ipcMain.handle("shell:open", (_event, url) => {
     if (typeof url === "string" && /^https:\/\//.test(url)) shell.openExternal(url);
+  });
+
+  ipcMain.handle("notify", (_event, { title, body }) => {
+    if (Notification.isSupported()) new Notification({ title: String(title), body: String(body) }).show();
+  });
+  ipcMain.handle("dock:badge", (_event, text) => {
+    app.dock?.setBadge(typeof text === "string" ? text : "");
   });
 }
 
