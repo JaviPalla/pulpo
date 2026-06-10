@@ -157,6 +157,8 @@ function wireSelftest() {
 }
 
 app.whenReady().then(() => {
+  const dockIcon = path.join(__dirname, "..", "assets", "icon-512.png");
+  if (process.platform === "darwin" && fs.existsSync(dockIcon)) app.dock.setIcon(dockIcon);
   wireIpc();
   if (SELFTEST) wireSelftest();
   createWindow();
