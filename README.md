@@ -70,7 +70,9 @@ npm start
 
 `npm run doctor` comprueba Node, dependencias, GitHub e IA, con el comando de arreglo para
 cada cosa que falte. Si arrancas sin GitHub conectado, la propia app te recibe con una
-pantalla de configuración guiada y botón de reintento.
+pantalla de configuración guiada y botón de reintento. Una vez conectado, Pulpo te lista
+tus repositorios accesibles para que marques los que quieres vigilar (o añadas cualquier
+`owner/repo` a mano) — y puedes cambiarlos cuando quieras en Ajustes ⚙.
 
 ### 1. GitHub (necesario)
 
@@ -101,8 +103,10 @@ npx electron-packager . Pulpo --platform=darwin --arch=arm64 --icon=build/icon.i
 ```
 src/main.js      ventana, IPC, notificaciones, selftest (--selftest[-route=list|changes|history])
 src/github.js    GraphQL (listado/detalle/grafo/update-branch) + REST (merge, diff, reviews)
+src/ai.js        review con IA: SDK de Anthropic o CLI de Claude Code, siempre como borradores
 src/drafts.js    borradores locales (userData/drafts.json)
 src/config.js    repos, polling, token manual opcional
+src/preload.js   puente IPC (contextBridge) — el renderer va sandboxed y sin Node
 renderer/        vanilla JS + CSS — sin frameworks, sin bundler
 scripts/         make-icon.js (el icono se renderiza con el propio Electron)
 ```
