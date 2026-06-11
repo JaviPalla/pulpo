@@ -565,6 +565,20 @@ body {
 .viewer-body { grid-column: 1; font-size: 12px; color: var(--text-muted); white-space: pre-wrap; }
 .viewer-actions { grid-row: 1 / span 2; grid-column: 2; display: flex; flex-direction: column; gap: 6px; }
 .viewer-actions .btn { padding: 3px 10px; font-size: 12px; }
+
+.draft-pub {
+  margin-left: auto;
+  font: inherit; font-size: 11px; font-weight: 600;
+  color: var(--green); background: transparent;
+  border: 1px solid var(--green); border-radius: 6px;
+  padding: 1px 8px; cursor: pointer;
+}
+.draft-pub:hover { background: var(--green-bg); }
+.draft-card .draft-del { margin-left: 6px; }
+.desc-fold summary { cursor: pointer; user-select: none; list-style: none; }
+.desc-fold summary::-webkit-details-marker { display: none; }
+.desc-fold summary::before { content: "▸ "; }
+.desc-fold[open] summary::before { content: "▾ "; }
 .draft-head { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: var(--yellow); }
 .draft-del { margin-left: auto; background: transparent; border: none; cursor: pointer; font-size: 13px; opacity: 0.7; }
 .draft-del:hover { opacity: 1; }

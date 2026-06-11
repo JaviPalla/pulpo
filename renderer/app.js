@@ -122,6 +122,7 @@ function draftCard(draft) {
   return `
     <div class="draft-card ${draft.ai ? "ai" : ""}" data-draft="${draft.id}">
       <div class="draft-head">${draft.ai ? "🤖 BORRADOR (IA)" : "📝 BORRADOR"} <span class="muted">· ${where}</span>
+        <button class="draft-pub" title="Publicar solo este borrador en GitHub">↗ Publicar</button>
         <button class="draft-del" title="Eliminar borrador">🗑</button>
       </div>
       <div class="draft-body">${esc(draft.body)}</div>
@@ -215,6 +216,52 @@ function wireDraftCards(container) {
       renderDetail();
     }),
   );
+  container.querySelectorAll(".draft-card .draft-pub").forEach((btn) =>
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const draft = state.drafts.find((d) => d.id === btn.closest(".draft-card").dataset.draft);
+      if (draft) confirmPublishSingle(draft);
+    }),
+  );
+}
+
+function confirmPublishSingle(draft) {
+  const root = $("#modal-root");
+  const where = draft.kind === "inline" ? `${draft.path}:${draft.line}` : "comentario general";
+  root.innerHTML = `
+    <div class="modal-backdrop" id="modal-backdrop">
+      <div class="modal">
+        <h3>↗ Publicar este borrador</h3>
+        <p class="muted">${esc(where)} — se publica como comentario (sin veredicto). El resto de borradores no se tocan.</p>
+        <div class="draft-card ${draft.ai ? "ai" : ""}" style="max-height:180px;overflow-y:auto"><div class="draft-body">${esc(draft.body)}</div></div>
+        <div class="modal-actions">
+          <button class="btn" id="modal-cancel">Cancelar</button>
+          <button class="btn btn-primary" id="modal-confirm">Publicar en GitHub</button>
+        </div>
+      </div>
+    </div>`;
+  $("#modal-cancel").addEventListener("click", () => (root.innerHTML = ""));
+  $("#modal-backdrop").addEventListener("click", (event) => {
+    if (event.target.id === "modal-backdrop") root.innerHTML = "";
+  });
+  $("#modal-confirm").addEventListener("click", async () => {
+    root.innerHTML = "";
+    try {
+      state.conversation = await window.pulpo.prConversation(detailRepo(), state.selected);
+      await window.pulpo.submitReview(detailRepo(), state.selected, {
+        commitId: state.conversation.headRefOid,
+        event: "COMMENT",
+        body: draft.kind === "general" ? draft.body : undefined,
+        comments: draft.kind === "inline" ? [draft] : [],
+      });
+      await removeDraft(draft.id);
+      toast("Borrador publicado ✓", "ok");
+      state.conversation = await window.pulpo.prConversation(detailRepo(), state.selected);
+      renderDetail();
+    } catch (err) {
+      toast(`No se pudo publicar (el borrador sigue guardado): ${String(err.message || err)}`, "err");
+    }
+  });
 }
 
 function draftsBar() {
@@ -305,6 +352,7 @@ function openDraftsViewer() {
               <div class="viewer-body">${esc(d.body.length > 220 ? `${d.body.slice(0, 220)}…` : d.body)}</div>
               <div class="viewer-actions">
                 <button class="btn viewer-go" data-id="${d.id}">Ir ↗</button>
+                <button class="btn viewer-pub" data-id="${d.id}" title="Publicar solo este borrador">Publicar</button>
                 <button class="btn viewer-del" data-id="${d.id}">🗑</button>
               </div>
             </div>`).join("")}
@@ -336,6 +384,13 @@ function openDraftsViewer() {
     btn.addEventListener("click", () => {
       close();
       scrollToDraft(btn.dataset.id);
+    }),
+  );
+  root.querySelectorAll(".viewer-pub").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const draft = state.drafts.find((d) => d.id === btn.dataset.id);
+      close();
+      if (draft) confirmPublishSingle(draft);
     }),
   );
   root.querySelectorAll(".viewer-del").forEach((btn) =>
@@ -668,18 +723,31 @@ function renderConversationTab() {
   const conv = state.conversation;
   const comments = conv?.comments?.nodes || [];
   const generalDrafts = state.drafts.filter((d) => d.kind === "general");
+  const inlineDraftCount = state.drafts.length - generalDrafts.length;
+  const longDescription = (pr.bodyHTML || "").length > 1500;
   $("#tab-body").innerHTML = `
-    <div class="section-h">Descripción</div>
-    <div class="pr-body">${pr.bodyHTML || "<p class='muted'>Sin descripción.</p>"}</div>
+    ${generalDrafts.length || inlineDraftCount
+      ? `<div class="section-h">Tus borradores (${state.drafts.length})</div>
+         ${generalDrafts.map(draftCard).join("")}
+         ${inlineDraftCount ? `<p class="muted">…y ${inlineDraftCount} en línea en la pestaña <a href="#" id="goto-changes">Cambios</a>.</p>` : ""}`
+      : ""}
     <div class="section-h">Comentarios (${comments.length})</div>
     ${comments.map(commentBlock).join("") || `<p class="muted">Nadie ha dicho nada todavía.</p>`}
-    ${generalDrafts.length ? `<div class="section-h">Tus borradores</div>${generalDrafts.map(draftCard).join("")}` : ""}
     <div class="composer">
       <textarea id="new-comment" rows="3" placeholder="Escribe un comentario… se guarda como borrador hasta que publiques"></textarea>
       <div class="composer-actions">
         <button class="btn btn-accent" id="send-comment">📝 Guardar borrador</button>
       </div>
-    </div>`;
+    </div>
+    <details class="desc-fold" ${longDescription ? "" : "open"}>
+      <summary class="section-h">Descripción${longDescription ? " (clic para desplegar)" : ""}</summary>
+      <div class="pr-body">${pr.bodyHTML || "<p class='muted'>Sin descripción.</p>"}</div>
+    </details>`;
+  $("#goto-changes")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    state.detailTab = "changes";
+    renderDetail();
+  });
   wireExternalLinks();
   wireDraftCards($("#tab-body"));
   $("#send-comment").addEventListener("click", async () => {
