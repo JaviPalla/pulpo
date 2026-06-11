@@ -30,4 +30,4 @@ Mac (Electron) GitHub PR client for Jesús. Bitbucket-style PR list + detail pan
 ## Conventions
 - Modern JS, double quotes, no semicolon omission, descriptive names; comments only where the why isn't obvious.
 - PR body HTML comes from GitHub's `bodyHTML` (already sanitized) — do not inject other HTML unescaped; everything else goes through `esc()`.
-- Default repo: `Uriach/zinc`. More repos via Settings.
+- No default repo: a fresh install shows the onboarding repo picker (suggestions from `viewerRepos()`), and repos can be edited later in Settings. Never reintroduce a hardcoded default repo.

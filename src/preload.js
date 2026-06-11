@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("pulpo", {
   authStatus: () => ipcRenderer.invoke("auth:status"),
   getConfig: () => ipcRenderer.invoke("config:get"),
   setConfig: (partial) => ipcRenderer.invoke("config:set", partial),
+  suggestRepos: () => ipcRenderer.invoke("repos:suggest"),
   listPRs: (repo, states) => ipcRenderer.invoke("prs:list", { repo, states }),
   searchPRs: (repos, states) => ipcRenderer.invoke("prs:search", { repos, states }),
   prDetail: (repo, number) => ipcRenderer.invoke("pr:detail", { repo, number }),

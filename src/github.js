@@ -100,6 +100,26 @@ async function viewer() {
   return data.viewer;
 }
 
+/** Repos accesibles del usuario (recientes primero), para el picker del onboarding. */
+async function viewerRepos() {
+  const data = await gql(
+    `query {
+       viewer {
+         repositories(
+           first: 50
+           orderBy: { field: PUSHED_AT, direction: DESC }
+           affiliations: [OWNER, COLLABORATOR, ORGANIZATION_MEMBER]
+         ) {
+           nodes { nameWithOwner isPrivate isArchived }
+         }
+       }
+     }`,
+  );
+  return data.viewer.repositories.nodes
+    .filter((r) => !r.isArchived)
+    .map((r) => ({ nameWithOwner: r.nameWithOwner, isPrivate: r.isPrivate }));
+}
+
 async function listPRs(repoFullName, states) {
   const [owner, name] = repoFullName.split("/");
   const data = await gql(
@@ -370,6 +390,7 @@ module.exports = {
   resolveToken,
   invalidateTokenCache,
   viewer,
+  viewerRepos,
   listPRs,
   searchPRs,
   prDetail,

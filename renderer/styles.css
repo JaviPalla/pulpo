@@ -508,6 +508,33 @@ body {
 .setup-step a { color: var(--accent); }
 .welcome-actions { display: flex; gap: 8px; justify-content: center; margin-top: 18px; }
 .small-print { text-align: center; margin-top: 14px; font-size: 11px; }
+.repo-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+.repo-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.repo-option:hover { background: var(--bg-hover); }
+.repo-option.selected { border-color: var(--accent); }
+.repo-check { width: 16px; flex: 0 0 16px; color: var(--green); font-weight: 700; }
+.repo-option .repo-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker-manual { margin-top: 0; }
+.picker-manual input { flex: 1; }
 
 /* ---------- copy row + cheatsheet ---------- */
 .copy-row { display: flex; gap: 6px; flex-wrap: wrap; margin: -4px 0 10px; }

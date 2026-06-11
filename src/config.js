@@ -5,7 +5,8 @@ const path = require("path");
 const { app } = require("electron");
 
 const DEFAULTS = {
-  repos: ["Uriach/zinc"],
+  // Sin repos de fábrica: el onboarding ofrece los repos accesibles del usuario.
+  repos: [],
   pollSeconds: 60,
   lastRepo: null,
   lastBucket: null,

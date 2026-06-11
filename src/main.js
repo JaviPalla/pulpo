@@ -81,6 +81,8 @@ function wireIpc() {
     return { ...rest, hasManualToken: Boolean(token) };
   });
 
+  ipcMain.handle("repos:suggest", async () => github.viewerRepos());
+
   ipcMain.handle("prs:list", async (_event, { repo, states }) => github.listPRs(repo, states));
   ipcMain.handle("prs:search", async (_event, { repos, states }) => github.searchPRs(repos, states));
   ipcMain.handle("pr:detail", async (_event, { repo, number }) => github.prDetail(repo, number));

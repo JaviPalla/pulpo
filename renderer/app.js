@@ -1533,6 +1533,8 @@ function openSettings() {
     }
     root.classList.add("hidden");
     root.innerHTML = "";
+    // Si el usuario quitó todos los repos, volvemos al picker del onboarding.
+    if (!state.config.repos.length) boot();
   });
   $("#add-repo").addEventListener("click", async () => {
     const value = $("#new-repo").value.trim();
@@ -1623,6 +1625,87 @@ async function renderWelcome() {
   );
 }
 
+/** Paso final del onboarding: GitHub conectado pero sin repos elegidos todavía. */
+async function renderRepoPicker() {
+  const selected = new Set();
+  let suggestions = [];
+  list.innerHTML = `
+    <div class="welcome">
+      <div class="welcome-logo">🐙</div>
+      <h2>¿Qué repositorios quieres ver?</h2>
+      <p class="muted">Conectado como <b>${esc(state.me?.login || "?")}</b>. Marca los repos que Pulpo vigilará — podrás cambiarlos cuando quieras en Ajustes ⚙.</p>
+      <div id="repo-picker" class="repo-picker"><div class="empty">Buscando tus repositorios…</div></div>
+      <div class="add-repo picker-manual">
+        <input type="text" id="picker-manual-input" placeholder="¿Falta alguno? Escríbelo: owner/repo" />
+        <button class="btn" id="picker-manual-add">Añadir</button>
+      </div>
+      <div class="welcome-actions">
+        <button class="btn btn-accent" id="picker-start" disabled>Empezar</button>
+      </div>
+    </div>`;
+
+  const rowsEl = $("#repo-picker");
+  const startBtn = $("#picker-start");
+
+  const renderRows = () => {
+    const names = [...new Set([...suggestions.map((s) => s.nameWithOwner), ...selected])];
+    if (!names.length) {
+      rowsEl.innerHTML = `<div class="empty">No encontré repos accesibles con tu token — añade uno a mano abajo.</div>`;
+    } else {
+      const isPrivate = new Map(suggestions.map((s) => [s.nameWithOwner, s.isPrivate]));
+      rowsEl.innerHTML = names
+        .map(
+          (name) => `
+        <button class="repo-option ${selected.has(name) ? "selected" : ""}" data-repo="${esc(name)}">
+          <span class="repo-check">${selected.has(name) ? "✓" : ""}</span>
+          <span class="repo-name">${esc(name)}</span>
+          ${isPrivate.get(name) ? `<span class="chip chip-draft">privado</span>` : ""}
+        </button>`,
+        )
+        .join("");
+      rowsEl.querySelectorAll("[data-repo]").forEach((btn) =>
+        btn.addEventListener("click", () => {
+          const name = btn.dataset.repo;
+          if (selected.has(name)) selected.delete(name);
+          else selected.add(name);
+          renderRows();
+        }),
+      );
+    }
+    startBtn.disabled = !selected.size;
+    startBtn.textContent = selected.size
+      ? `Empezar con ${selected.size} ${selected.size === 1 ? "repositorio" : "repositorios"}`
+      : "Empezar";
+  };
+
+  startBtn.addEventListener("click", async () => {
+    if (!selected.size) return;
+    state.config = await window.pulpo.setConfig({ repos: [...selected] });
+    state.repo = null;
+    boot();
+  });
+  const addManual = () => {
+    const input = $("#picker-manual-input");
+    const value = input.value.trim();
+    if (!/^[\w.-]+\/[\w.-]+$/.test(value)) return toast("Formato esperado: owner/repo", "err");
+    selected.add(value);
+    input.value = "";
+    renderRows();
+  };
+  $("#picker-manual-add").addEventListener("click", addManual);
+  $("#picker-manual-input").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") addManual();
+  });
+
+  try {
+    suggestions = await window.pulpo.suggestRepos();
+  } catch {
+    /* sin sugerencias no pasa nada: queda la entrada manual */
+  }
+  renderRows();
+  notifySelftestOnce();
+}
+
 /* ============ arranque ============ */
 function renderRepoSelect() {
   const select = $("#repo-select");
@@ -1659,6 +1742,10 @@ async function boot() {
     $("#me").innerHTML = "";
     await renderWelcome();
     notifySelftestOnce();
+    return;
+  }
+  if (!state.config.repos.length) {
+    await renderRepoPicker();
     return;
   }
   await refresh();
