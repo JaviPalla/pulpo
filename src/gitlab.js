@@ -549,6 +549,79 @@ async function prNodeId(repoFullName, number) {
   return encodeId(repoFullName, number);
 }
 
+/* ---------- milestones (vista de tareas por persona) ---------- */
+
+// Grupo del que leer milestones e issues. Si no hay uno explícito en config,
+// se deriva del primer segmento del primer repo (group/sub/project -> group).
+function milestonesGroup() {
+  const cfg = config.load();
+  const explicit = cfg.milestones?.group;
+  if (explicit) return explicit;
+  const first = (cfg.repos || [])[0] || "";
+  return first.split("/")[0] || null;
+}
+
+function mapMilestone(m) {
+  return {
+    id: m.id,
+    iid: m.iid,
+    title: m.title,
+    description: m.description || "",
+    dueDate: m.due_date || null,
+    startDate: m.start_date || null,
+    state: m.state, // "active" | "closed"
+    webUrl: m.web_url,
+  };
+}
+
+function mapAssignee(u) {
+  return { username: u.username, name: u.name || u.username, avatarUrl: u.avatar_url || null };
+}
+
+// Con with_labels_details=true, `labels` llega como objetos {name,color,text_color}.
+function mapIssue(issue) {
+  const labels = (issue.labels || []).map((l) =>
+    typeof l === "string" ? { name: l, color: null, textColor: null } : { name: l.name, color: l.color, textColor: l.text_color },
+  );
+  const description = issue.description || "";
+  return {
+    iid: issue.iid,
+    projectId: issue.project_id,
+    // references.full = "group/project#iid"; nos quedamos con el path del proyecto.
+    projectPath: (issue.references?.full || "").replace(/#\d+$/, ""),
+    title: issue.title,
+    descriptionHtml: mdToSafeHtml(description), // markdown crudo -> HTML seguro (no inyectar sin escapar)
+    hasDescription: Boolean(description.trim()),
+    state: issue.state, // "opened" | "closed"
+    webUrl: issue.web_url,
+    labels,
+    assignees: (issue.assignees || []).map(mapAssignee),
+    createdAt: issue.created_at,
+    updatedAt: issue.updated_at,
+  };
+}
+
+async function listMilestones() {
+  const group = milestonesGroup();
+  if (!group) throw new Error("No hay grupo configurado para milestones (revisa repos o config.milestones.group).");
+  const ms = await apiAll(`/groups/${encodeURIComponent(group)}/milestones?state=active&include_ancestors=true`);
+  return ms.map(mapMilestone);
+}
+
+// OJO: el parámetro de la API de issues es `milestone` (título), NO `milestone_title`
+// (ese es para el endpoint de milestones); si te equivocas, GitLab lo ignora en silencio
+// y te devuelve TODOS los issues del grupo. Por defecto solo abiertas: las cerradas
+// (que pueden ser miles en un grupo activo) no deben comerse el límite de paginación.
+async function milestoneIssues(milestoneTitle, { includeClosed = false } = {}) {
+  const group = milestonesGroup();
+  if (!group) throw new Error("No hay grupo configurado para milestones (revisa repos o config.milestones.group).");
+  const enc = encodeURIComponent(group);
+  const mt = encodeURIComponent(milestoneTitle);
+  const state = includeClosed ? "all" : "opened";
+  const issues = await apiAll(`/groups/${enc}/issues?milestone=${mt}&state=${state}&with_labels_details=true`);
+  return issues.map(mapIssue);
+}
+
 module.exports = {
   resolveToken,
   invalidateTokenCache,
@@ -573,4 +646,6 @@ module.exports = {
   revertPullRequest,
   setPrDraft,
   prNodeId,
+  listMilestones,
+  milestoneIssues,
 };

@@ -12,6 +12,8 @@ const DEFAULTS = {
   // Sin repos de fábrica: el onboarding ofrece los repos accesibles del usuario.
   repos: [],
   pollSeconds: 60,
+  // Tema de resaltado de sintaxis del diff (pantalla Cambios): "one-dark" | "dracula" | "github-light".
+  theme: "one-dark",
   lastRepo: null,
   lastBucket: null,
   // Token manual SOLO como último recurso; lo normal es el CLI (gh/glab) o la env var.
@@ -25,6 +27,27 @@ const DEFAULTS = {
     branches: ["development"],
     // Además, proponer la rama hermana de la release branch destino (mx ⇄ sin mx).
     siblingMx: true,
+  // Vista de Milestones (solo GitLab): foto por persona de las tareas (issues) de un milestone de grupo.
+  milestones: {
+    // Grupo de GitLab del que leer milestones e issues. null = derivar del primer segmento de repos[].
+    group: null,
+    // Labels que representan el ESTADO del flujo de trabajo (se muestran como chips de filtro).
+    // El resto de labels del issue se tratan como categorías/prioridades y no filtran el flujo.
+    statusLabels: [
+      "in development",
+      "checking",
+      "pending check",
+      "pending check by issuer",
+      "pending check in pruebas",
+      "waiting",
+      "needs fixing",
+      "needs enhancements",
+      "finished",
+    ],
+    // Labels de "terminada pero no cerrada" (la fase de comprobación): se ocultan por
+    // defecto (chip en modo "ocultar") y alimentan la métrica "En comprobar". Un issue
+    // abierto con cualquiera de estas no cuenta como pendiente. Editable por instancia.
+    doneLabels: ["finished", "pending check", "pending check by issuer", "pending check in pruebas"],
   },
 };
 
@@ -39,6 +62,8 @@ function load() {
     const cfg = { ...DEFAULTS, ...parsed };
     // Merge profundo de cherryPick: un guardado parcial no debe pisar los defaults del resto de claves.
     cfg.cherryPick = { ...DEFAULTS.cherryPick, ...(parsed.cherryPick || {}) };
+    // Merge profundo de milestones: un guardado parcial no debe pisar los defaults del resto de claves.
+    cfg.milestones = { ...DEFAULTS.milestones, ...(parsed.milestones || {}) };
     return cfg;
   } catch {
     return { ...DEFAULTS };

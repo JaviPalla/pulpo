@@ -91,7 +91,7 @@ const PR_LIST_FIELDS = `
   reviewRequests(first: 10) {
     nodes { requestedReviewer { __typename ... on User { login } ... on Team { name } } }
   }
-  latestReviews(first: 10) { nodes { author { login avatarUrl } state } }
+  latestReviews(first: 10) { nodes { databaseId author { login avatarUrl } state } }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 `;
 
@@ -333,6 +333,11 @@ async function submitReview(repoFullName, number, { commitId, event, body, comme
   return rest("POST", `/repos/${repoFullName}/pulls/${number}/reviews`, payload);
 }
 
+/** Descarta una review publicada (quitar tu aprobación). GitHub exige un mensaje. */
+async function dismissReview(repoFullName, number, reviewId, message) {
+  return rest("PUT", `/repos/${repoFullName}/pulls/${number}/reviews/${reviewId}/dismissals`, { message });
+}
+
 /* ---------- acciones sobre el grafo ---------- */
 
 async function createBranch(repoFullName, branchName, sha) {
@@ -355,6 +360,16 @@ async function forceUpdateBranch(repoFullName, branchName, sha) {
  */
 async function cherryPick() {
   throw new Error("El cherry-pick de hotfix solo está disponible en GitLab.");
+ * Stubs de paridad: la vista de Milestones es una feature solo-GitLab
+ * (la UI la oculta cuando provider !== "gitlab"). Si alguien las invoca aquí,
+ * fallamos explícito en vez de romper en silencio. Mantiene la interfaz idéntica.
+ */
+async function listMilestones() {
+  throw new Error("La vista de Milestones solo está disponible en GitLab.");
+}
+
+async function milestoneIssues() {
+  throw new Error("La vista de Milestones solo está disponible en GitLab.");
 }
 
 async function revertPullRequest(prNodeId) {
@@ -414,10 +429,13 @@ module.exports = {
   addInlineComment,
   replyToThread,
   submitReview,
+  dismissReview,
   createBranch,
   forceUpdateBranch,
   cherryPick,
   revertPullRequest,
   setPrDraft,
   prNodeId,
+  listMilestones,
+  milestoneIssues,
 };

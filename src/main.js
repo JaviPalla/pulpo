@@ -78,6 +78,7 @@ function wireIpc() {
     const repoRe = nextProvider === "gitlab" ? /^[\w.-]+(\/[\w.-]+)+$/ : /^[\w.-]+\/[\w.-]+$/;
     if (Array.isArray(partial.repos)) allowed.repos = partial.repos.filter((r) => repoRe.test(r));
     if (Number.isInteger(partial.pollSeconds) && partial.pollSeconds >= 15) allowed.pollSeconds = partial.pollSeconds;
+    if (["one-dark", "dracula", "github-light"].includes(partial.theme)) allowed.theme = partial.theme;
     if (partial.provider === "github" || partial.provider === "gitlab") {
       allowed.provider = partial.provider;
       // Cambiar de proveedor invalida el token: era de otro sitio.
@@ -104,6 +105,18 @@ function wireIpc() {
       if (Array.isArray(cp.branches)) next.branches = cp.branches.filter((b) => typeof b === "string" && branchRe.test(b));
       if (typeof cp.siblingMx === "boolean") next.siblingMx = cp.siblingMx;
       allowed.cherryPick = next;
+    if (partial.milestones && typeof partial.milestones === "object") {
+      const m = partial.milestones;
+      const next = { ...current.milestones };
+      if (typeof m.group === "string") next.group = m.group.trim() || null;
+      else if (m.group === null) next.group = null;
+      if (Array.isArray(m.statusLabels)) {
+        next.statusLabels = m.statusLabels.filter((l) => typeof l === "string" && l.trim());
+      }
+      if (Array.isArray(m.doneLabels)) {
+        next.doneLabels = m.doneLabels.filter((l) => typeof l === "string" && l.trim());
+      }
+      allowed.milestones = next;
     }
     const { token, ...rest } = config.save(allowed);
     return { ...rest, hasManualToken: Boolean(token) };
@@ -132,6 +145,9 @@ function wireIpc() {
   );
   ipcMain.handle("pr:submitReview", async (_event, { repo, number, review }) =>
     gh().submitReview(repo, number, review),
+  );
+  ipcMain.handle("pr:dismissReview", async (_event, { repo, number, reviewId, message }) =>
+    github.dismissReview(repo, number, reviewId, String(message || "")),
   );
 
   ipcMain.handle("ai:review", async (_event, { title, body, files }) => ai.generateReview({ title, body, files }));
@@ -162,6 +178,11 @@ function wireIpc() {
     return gh().revertPullRequest(nodeId);
   });
   ipcMain.handle("pr:setDraft", async (_event, { nodeId, toDraft }) => gh().setPrDraft(nodeId, Boolean(toDraft)));
+
+  ipcMain.handle("milestones:list", async () => gh().listMilestones());
+  ipcMain.handle("milestones:issues", async (_event, { title, includeClosed }) =>
+    gh().milestoneIssues(title, { includeClosed: Boolean(includeClosed) }),
+  );
 
   ipcMain.handle("shell:open", (_event, url) => {
     if (typeof url === "string" && /^https:\/\//.test(url)) shell.openExternal(url);

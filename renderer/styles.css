@@ -415,6 +415,54 @@ body {
 .diff-del { background: var(--red-bg); }
 .diff-del .code .sign { color: var(--red); }
 .diff-hunk td, .diff-meta td { background: var(--branch-bg); color: var(--branch-text); padding: 3px 12px; font-size: 11px; }
+
+/* ---------- temas de sintaxis (pantalla Cambios) ----------
+   El tema es dueño del FONDO del área de código; add/del son superposiciones
+   translúcidas verde/rojo sobre ese fondo, así los tres temas quedan coherentes
+   sin importar el modo claro/oscuro del SO. Solo afecta al diff, no al chrome. */
+[data-syntax-theme] .diff-table { background: var(--hl-bg); color: var(--hl-fg); }
+[data-syntax-theme] .diff-table .gutter { color: var(--hl-gutter); border-right-color: var(--hl-border); }
+[data-syntax-theme] .diff-ctx { background: transparent; }
+[data-syntax-theme] .diff-add { background: var(--hl-add); }
+[data-syntax-theme] .diff-del { background: var(--hl-del); }
+[data-syntax-theme] .code .sign { color: var(--hl-gutter); }
+[data-syntax-theme] .diff-add .code .sign { color: var(--hl-add-sign); }
+[data-syntax-theme] .diff-del .code .sign { color: var(--hl-del-sign); }
+
+.hl-com { color: var(--hl-com); font-style: italic; }
+.hl-str { color: var(--hl-str); }
+.hl-num { color: var(--hl-num); }
+.hl-kw { color: var(--hl-kw); }
+.hl-type { color: var(--hl-type); }
+.hl-fn { color: var(--hl-fn); }
+.hl-op { color: var(--hl-op); }
+.hl-punct { color: var(--hl-punct); }
+
+[data-syntax-theme="one-dark"] {
+  --hl-bg: #282c34; --hl-fg: #abb2bf; --hl-gutter: #5c6370; --hl-border: #3a3f4b;
+  --hl-add: rgba(152, 195, 121, 0.14); --hl-del: rgba(224, 108, 117, 0.14);
+  --hl-add-sign: #98c379; --hl-del-sign: #e06c75;
+  --hl-com: #7f848e; --hl-str: #98c379; --hl-num: #d19a66; --hl-kw: #c678dd;
+  --hl-type: #e5c07b; --hl-fn: #61afef; --hl-op: #56b6c2; --hl-punct: #abb2bf;
+}
+[data-syntax-theme="dracula"] {
+  --hl-bg: #282a36; --hl-fg: #f8f8f2; --hl-gutter: #6272a4; --hl-border: #3b3e52;
+  --hl-add: rgba(80, 250, 123, 0.13); --hl-del: rgba(255, 85, 85, 0.13);
+  --hl-add-sign: #50fa7b; --hl-del-sign: #ff5555;
+  --hl-com: #6272a4; --hl-str: #f1fa8c; --hl-num: #bd93f9; --hl-kw: #ff79c6;
+  --hl-type: #8be9fd; --hl-fn: #50fa7b; --hl-op: #ff79c6; --hl-punct: #f8f8f2;
+}
+[data-syntax-theme="github-light"] {
+  --hl-bg: #ffffff; --hl-fg: #1f2328; --hl-gutter: #8c959f; --hl-border: #d8dee4;
+  --hl-add: rgba(74, 194, 107, 0.16); --hl-del: rgba(255, 129, 130, 0.18);
+  --hl-add-sign: #1a7f37; --hl-del-sign: #cf222e;
+  --hl-com: #6e7781; --hl-str: #0a3069; --hl-num: #0550ae; --hl-kw: #cf222e;
+  --hl-type: #953800; --hl-fn: #8250df; --hl-op: #0550ae; --hl-punct: #1f2328;
+}
+
+.theme-preview { margin-top: 10px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.theme-preview .diff-table { font-size: 11.5px; }
+#syntax-theme { font: inherit; padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
 .add-comment {
   display: none; position: absolute; right: -1px; top: 0;
   width: 16px; height: 16px; line-height: 13px; font-size: 12px; font-weight: 700;
@@ -465,6 +513,86 @@ body {
   font: inherit; color: var(--text); background: var(--gray-bg);
   border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px;
 }
+
+/* ---------- milestones (tareas por persona) ---------- */
+.dot-milestone { background: linear-gradient(135deg, var(--green), var(--accent)); }
+.ms-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.ms-select {
+  font: inherit; color: var(--text); background: var(--bg-raised);
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; max-width: 320px;
+}
+.ms-closed-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); cursor: pointer; }
+.ms-counter { font-size: 12px; color: var(--text-muted); }
+.ms-toolbar .icon-btn { margin-left: auto; }
+.ms-status-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.ms-status-chip {
+  font-size: 11px; color: var(--text-muted); background: var(--gray-bg);
+  border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; cursor: pointer;
+}
+.ms-status-chip.on { color: var(--branch-text); background: var(--branch-bg); border-color: var(--branch-text); }
+.ms-status-chip.off { color: var(--red); background: var(--red-bg); border-color: var(--red); text-decoration: line-through; }
+.ms-status-hint, .ms-summary-label { font-size: 11px; color: var(--text-muted); align-self: center; margin-right: 2px; }
+.ms-summary {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  margin-bottom: 12px; padding: 10px 14px;
+  background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px;
+}
+.ms-summary-total { margin-left: auto; }
+/* Métrica = anillo de progreso (conic-gradient) + etiqueta corta autoexplicativa. */
+.ms-metric { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.ms-metric-label { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.2; }
+.ms-metric-label .muted { font-weight: 400; }
+.ms-donut {
+  --pct: 0; --size: 40px; --donut-color: var(--accent);
+  position: relative; width: var(--size); height: var(--size); border-radius: 50%;
+  flex-shrink: 0; display: grid; place-items: center;
+  background: conic-gradient(var(--donut-color) calc(var(--pct) * 1%), var(--gray-bg) 0);
+}
+.ms-donut::after { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--bg-raised); }
+.ms-donut-num { position: relative; z-index: 1; font-size: 11px; font-weight: 700; color: var(--text); }
+.ms-metric.mini .ms-donut { --size: 30px; }
+.ms-metric.mini .ms-donut::after { inset: 3px; background: var(--bg); }
+.ms-metric.mini .ms-donut-num { font-size: 9px; }
+.ms-metric.mini .ms-metric-label { font-size: 11px; font-weight: 500; }
+.ms-due { font-size: 12px; color: var(--text-muted); }
+.ms-due b { color: var(--text); font-weight: 600; }
+.ms-due.soon b { color: var(--yellow); }
+.ms-due.overdue, .ms-due.overdue b { color: var(--red); }
+.ms-group-metrics { display: flex; gap: 16px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg); }
+.ms-board {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px; align-items: start;
+}
+.ms-group {
+  background: var(--bg-raised); border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden;
+}
+.ms-group-head {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg-raised); z-index: 1;
+}
+.ms-avatar { width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; object-fit: cover; }
+.ms-avatar.ph { display: grid; place-items: center; background: var(--gray-bg); color: var(--text-muted); font-size: 12px; }
+.ms-group-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ms-group-count {
+  margin-left: auto; flex-shrink: 0; font-size: 11px; font-weight: 600;
+  color: var(--text-muted); background: var(--gray-bg); border-radius: 999px; padding: 1px 9px;
+}
+.ms-tasks { padding: 8px; display: flex; flex-direction: column; gap: 8px; max-height: 70vh; overflow-y: auto; }
+.ms-task { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 9px 10px; }
+.ms-task.closed { opacity: 0.62; }
+.ms-task-title {
+  display: block; width: 100%; text-align: left; font: inherit; font-weight: 500;
+  color: var(--text); background: none; border: none; padding: 0; cursor: pointer; line-height: 1.35;
+}
+.ms-task-title:hover { color: var(--accent); }
+.ms-iid { color: var(--text-muted); font-weight: 400; font-size: 11px; }
+.ms-task-labels { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+.ms-label {
+  font-size: 10.5px; line-height: 1.6; border-radius: 999px; padding: 0 8px;
+  background: var(--gray-bg); color: var(--text-muted); border: 1px solid var(--border);
+}
+.ms-label.status { font-weight: 600; border: none; }
 
 /* ---------- borradores ---------- */
 .draft-card {
