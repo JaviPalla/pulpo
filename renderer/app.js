@@ -1894,7 +1894,6 @@ function milestoneCard(iss, statusSet) {
         ${esc(iss.title)} <span class="ms-iid">#${iss.iid}</span>
       </button>
       ${chips ? `<div class="ms-task-labels">${chips}</div>` : ""}
-      ${iss.hasDescription ? `<div class="ms-task-desc">${iss.descriptionHtml}</div>` : ""}
     </div>`;
 }
 
@@ -1914,10 +1913,37 @@ function milestoneMetrics(openIssues, statusSet, doneSet) {
   return { total, unscheduled, checking, unschedPct: pct(unscheduled), checkPct: pct(checking) };
 }
 
-function metricsBadges(mm, cls) {
+// Indicador circular tipo gráfica: el anillo se rellena según el % y el número va dentro.
+function metricCircle(pct, count, total, label, colorVar, hint, cls) {
   return `
-    <span class="ms-metric ${cls}" title="Abiertas sin etiqueta de estado (sin programar)">📋 ${mm.unschedPct}% <span class="muted">(${mm.unscheduled}/${mm.total})</span></span>
-    <span class="ms-metric ${cls}" title="Terminadas pero no cerradas (en comprobar)">🔍 ${mm.checkPct}% <span class="muted">(${mm.checking}/${mm.total})</span></span>`;
+    <div class="ms-metric ${cls}" title="${esc(hint)}">
+      <span class="ms-donut" style="--pct:${pct};--donut-color:var(${colorVar})"><span class="ms-donut-num">${pct}%</span></span>
+      <span class="ms-metric-label">${label} <span class="muted">${count}/${total}</span></span>
+    </div>`;
+}
+
+function metricsBadges(mm, cls) {
+  return (
+    metricCircle(mm.unschedPct, mm.unscheduled, mm.total, "Sin programar", "--yellow", "Abiertas sin etiqueta de estado: aún sin planificar", cls) +
+    metricCircle(mm.checkPct, mm.checking, mm.total, "En comprobar", "--green", "Terminadas pero no cerradas: en fase de comprobación", cls)
+  );
+}
+
+// Fecha de cierre del milestone + cuántos días faltan (o si ya venció).
+function milestoneDueInfo(selectedMs) {
+  if (!selectedMs?.dueDate) return "";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(`${selectedMs.dueDate}T00:00:00`);
+  const days = Math.round((due - today) / 86400000);
+  const [y, mo, d] = selectedMs.dueDate.split("-");
+  const dateStr = `${d}/${mo}/${y}`;
+  const rel =
+    days > 0 ? `faltan ${days} día${days === 1 ? "" : "s"}`
+    : days === 0 ? "vence hoy"
+    : `vencido hace ${-days} día${-days === 1 ? "" : "s"}`;
+  const cls = days < 0 ? "overdue" : days <= 3 ? "soon" : "";
+  return `<span class="ms-due ${cls}">Cierre: <b>${dateStr}</b> · ${rel}</span>`;
 }
 
 function renderMilestones() {
@@ -1955,6 +1981,7 @@ function renderMilestones() {
   const openIssues = m.issues.filter((iss) => iss.state === "opened");
   const openByMember = new Map(groupIssuesByAssignee(openIssues).map((g) => [g.username, g.issues]));
   const milestoneMM = milestoneMetrics(openIssues, statusSet, doneSet);
+  const selectedMs = m.list.find((ms) => ms.title === m.selectedTitle);
 
   const msOptions = m.list
     .map((ms) => `<option value="${esc(ms.title)}" ${ms.title === m.selectedTitle ? "selected" : ""}>${esc(ms.title)}${ms.dueDate ? ` · vence ${esc(ms.dueDate)}` : ""}</option>`)
@@ -1995,9 +2022,9 @@ function renderMilestones() {
       <button class="icon-btn" id="ms-refresh" title="Recargar">⟳</button>
     </div>
     <div class="ms-summary">
-      <span class="ms-summary-label">Milestone:</span>
       ${metricsBadges(milestoneMM, "")}
-      <span class="muted">· ${milestoneMM.total} abiertas</span>
+      ${milestoneDueInfo(selectedMs)}
+      <span class="muted ms-summary-total">${milestoneMM.total} abiertas</span>
     </div>
     ${statusChips ? `<div class="ms-status-bar"><span class="ms-status-hint">Estado:</span>${statusChips}</div>` : ""}
     <div class="ms-board">${boardHtml}</div>`;

@@ -483,14 +483,32 @@ body {
 .ms-status-chip.off { color: var(--red); background: var(--red-bg); border-color: var(--red); text-decoration: line-through; }
 .ms-status-hint, .ms-summary-label { font-size: 11px; color: var(--text-muted); align-self: center; margin-right: 2px; }
 .ms-summary {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  margin-bottom: 12px; padding: 8px 12px;
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  margin-bottom: 12px; padding: 10px 14px;
   background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px;
 }
-.ms-metric { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; }
-.ms-metric .muted { font-weight: 400; }
-.ms-metric.mini { font-size: 11px; font-weight: 500; }
-.ms-group-metrics { display: flex; gap: 10px; flex-wrap: wrap; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--bg); }
+.ms-summary-total { margin-left: auto; }
+/* Métrica = anillo de progreso (conic-gradient) + etiqueta corta autoexplicativa. */
+.ms-metric { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.ms-metric-label { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.2; }
+.ms-metric-label .muted { font-weight: 400; }
+.ms-donut {
+  --pct: 0; --size: 40px; --donut-color: var(--accent);
+  position: relative; width: var(--size); height: var(--size); border-radius: 50%;
+  flex-shrink: 0; display: grid; place-items: center;
+  background: conic-gradient(var(--donut-color) calc(var(--pct) * 1%), var(--gray-bg) 0);
+}
+.ms-donut::after { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--bg-raised); }
+.ms-donut-num { position: relative; z-index: 1; font-size: 11px; font-weight: 700; color: var(--text); }
+.ms-metric.mini .ms-donut { --size: 30px; }
+.ms-metric.mini .ms-donut::after { inset: 3px; background: var(--bg); }
+.ms-metric.mini .ms-donut-num { font-size: 9px; }
+.ms-metric.mini .ms-metric-label { font-size: 11px; font-weight: 500; }
+.ms-due { font-size: 12px; color: var(--text-muted); }
+.ms-due b { color: var(--text); font-weight: 600; }
+.ms-due.soon b { color: var(--yellow); }
+.ms-due.overdue, .ms-due.overdue b { color: var(--red); }
+.ms-group-metrics { display: flex; gap: 16px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg); }
 .ms-board {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 14px; align-items: start;
@@ -525,11 +543,6 @@ body {
   background: var(--gray-bg); color: var(--text-muted); border: 1px solid var(--border);
 }
 .ms-label.status { font-weight: 600; border: none; }
-.ms-task-desc {
-  margin-top: 7px; font-size: 12px; color: var(--text-muted); line-height: 1.45;
-  max-height: 7.5em; overflow: hidden; position: relative;
-}
-.ms-task-desc p { margin: 0; }
 
 /* ---------- borradores ---------- */
 .draft-card {
