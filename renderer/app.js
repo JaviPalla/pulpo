@@ -55,6 +55,8 @@ const providerName = () => (isGitlab() ? "GitLab" : "GitHub");
 // GitLab admite paths anidados (group/sub/project); GitHub solo owner/repo.
 const repoRe = () => (isGitlab() ? /^[\w.-]+(\/[\w.-]+)+$/ : /^[\w.-]+\/[\w.-]+$/);
 const repoPlaceholder = () => (isGitlab() ? "group/subgroup/project" : "owner/repo");
+// Pre-validación de nombres de rama (UX); el backend valida con la misma regla en main.js.
+const BRANCH_RE = /^[\w./-]{1,200}$/;
 
 function timeAgo(iso) {
   const seconds = Math.max(1, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -1173,11 +1175,126 @@ function confirmMerge(pr) {
         isCrossRepository: pr.isCrossRepository,
       });
       toast(res.merged ? `#${pr.number} fusionada (merge commit)${res.branchDeleted ? " · rama borrada" : ""}` : "Merge no completado", res.merged ? "ok" : "err");
+      // Tras un merge de hotfix/* (solo GitLab), ofrecer replicar el contenido a otras ramas.
+      // En su propio try: un fallo aquí no debe mostrar "Merge falló" (el merge ya fue bien).
+      if (res.merged && res.sha && shouldOfferCherryPick(pr)) {
+        try {
+          await offerCherryPick(pr, res.sha);
+        } catch (cpErr) {
+          toast(`No se pudo ofrecer el cherry-pick: ${String(cpErr.message || cpErr)}`, "err");
+        }
+      }
       closeDetail();
       await refresh();
     } catch (err) {
       toast(`Merge falló: ${String(err.message || err)}`, "err");
     }
+  });
+}
+
+/* ============ cherry-pick de hotfix tras merge (solo GitLab) ============ */
+
+/** ¿Esta MR mergeada dispara el ofrecimiento de cherry-pick? */
+function shouldOfferCherryPick(pr) {
+  if (!isGitlab()) return false;
+  const cp = state.config?.cherryPick;
+  const prefix = cp?.prefix?.trim();
+  if (!prefix) return false;
+  return String(pr.headRefName || "").startsWith(prefix);
+}
+
+/** Deriva la rama hermana de una release branch: mx ⇄ sin mx. null si no aplica. */
+function siblingMxBranch(base) {
+  if (!base) return null;
+  // Solo tiene sentido sobre release branches (convención rb/…) o ramas ya -mx.
+  if (!(/(^|\/)rb\//.test(base) || base.endsWith("-mx"))) return null;
+  return base.endsWith("-mx") ? base.slice(0, -"-mx".length) : `${base}-mx`;
+}
+
+/** Ramas destino propuestas para el cherry-pick, derivadas de la config y del destino del merge. */
+function cherryPickTargets(pr) {
+  const cp = state.config?.cherryPick || {};
+  const base = pr.baseRefName;
+  const targets = [...(cp.branches || [])];
+  if (cp.siblingMx) {
+    const sibling = siblingMxBranch(base);
+    if (sibling) targets.push(sibling);
+  }
+  // Sin duplicados y sin la propia rama destino del merge (ya tiene el contenido).
+  return [...new Set(targets)].filter((b) => b && b !== base);
+}
+
+/**
+ * Pregunta como precaución (nunca auto-dispara): hace dry-run de cada rama destino,
+ * muestra el resultado por-rama y deja confirmar/desmarcar antes de aplicar de verdad.
+ */
+async function offerCherryPick(pr, sha) {
+  const repo = detailRepo();
+  const targets = cherryPickTargets(pr);
+  if (!targets.length) return;
+
+  const root = $("#modal-root");
+  root.innerHTML = `
+    <div class="modal-backdrop" id="cp-backdrop">
+      <div class="modal">
+        <h3>Cherry-pick de #${pr.number}</h3>
+        <p class="muted"><b>${esc(pr.headRefName)}</b> se mergeó en <b>${esc(pr.baseRefName)}</b>. ¿Replico su contenido a estas ramas?</p>
+        <p class="muted">Comprobando conflictos…</p>
+      </div>
+    </div>`;
+
+  // Dry-run en paralelo: anticipa conflictos / ramas protegidas antes de escribir nada.
+  const checks = await Promise.all(
+    targets.map((branch) => window.pulpo.cherryPick(repo, sha, branch, true)),
+  );
+
+  await new Promise((resolve) => {
+    const rows = checks
+      .map((c, i) => {
+        const ok = c.ok;
+        const id = `cp-b-${i}`;
+        const status = ok
+          ? `<span class="checks-success">✓ aplica limpio</span>`
+          : `<span class="checks-failure">✗ ${esc(c.error || "conflicto")}</span>`;
+        return `<label class="cp-row"><input type="checkbox" id="${id}" data-branch="${esc(c.branch)}" ${ok ? "checked" : ""} /> <b>${esc(c.branch)}</b> — ${status}</label>`;
+      })
+      .join("");
+    root.innerHTML = `
+      <div class="modal-backdrop" id="cp-backdrop">
+        <div class="modal">
+          <h3>Cherry-pick de #${pr.number}</h3>
+          <p class="muted"><b>${esc(pr.headRefName)}</b> → <b>${esc(pr.baseRefName)}</b>. Replica el contenido a:</p>
+          <div class="cp-targets">${rows}</div>
+          <div class="modal-actions">
+            <button class="btn" id="cp-skip">Ahora no</button>
+            <button class="btn btn-primary" id="cp-go">Hacer cherry-pick</button>
+          </div>
+        </div>
+      </div>`;
+
+    const close = () => {
+      root.innerHTML = "";
+      resolve();
+    };
+    $("#cp-skip").addEventListener("click", close);
+    $("#cp-backdrop").addEventListener("click", (event) => {
+      if (event.target.id === "cp-backdrop") close();
+    });
+    $("#cp-go").addEventListener("click", async () => {
+      const branches = [...root.querySelectorAll(".cp-targets input:checked")].map((el) => el.dataset.branch);
+      root.innerHTML = "";
+      if (!branches.length) return resolve();
+      // No atómico entre ramas: aplicamos en secuencia y reportamos por-rama.
+      const results = [];
+      for (const branch of branches) {
+        results.push(await window.pulpo.cherryPick(repo, sha, branch, false));
+      }
+      const ok = results.filter((r) => r.ok).map((r) => r.branch);
+      const failed = results.filter((r) => !r.ok);
+      if (ok.length) toast(`Cherry-pick OK: ${ok.join(", ")}`, "ok");
+      for (const f of failed) toast(`Cherry-pick falló en ${f.branch}: ${f.error}`, "err");
+      resolve();
+    });
   });
 }
 
@@ -1553,6 +1670,34 @@ function schedulePoll() {
 
 /* ============ ajustes ============ */
 
+/** Tarjeta de Ajustes para el cherry-pick de hotfix (solo GitLab). */
+function cherryPickSettingsCard(cfg) {
+  const cp = cfg.cherryPick || {};
+  const branches = cp.branches || [];
+  return `
+    <div class="settings-card">
+      <h4>Cherry-pick de hotfix 🍒</h4>
+      <p class="muted">Las MR cuya rama origen empiece por el prefijo y vayan a la release branch ofrecen, tras el merge, replicar su contenido a otras ramas (te pregunta primero, nunca automático).</p>
+      <div class="add-repo">
+        <input type="text" id="cp-prefix" value="${esc(cp.prefix || "")}" placeholder="hotfix/" />
+        <span class="muted" style="align-self:center">prefijo de rama origen</span>
+      </div>
+      <label style="display:block;margin:8px 0">
+        <input type="checkbox" id="cp-sibling" ${cp.siblingMx ? "checked" : ""} />
+        Añadir también la rama hermana de la release branch destino (mx ⇄ sin mx)
+      </label>
+      <p class="muted">Ramas destino fijas (además de la hermana -mx):</p>
+      <div id="cp-branch-lines">
+        ${branches.map((b) => `<div class="repo-line">${esc(b)} <button class="btn" data-cp-del="${esc(b)}">Quitar</button></div>`).join("") || `<p class="muted">— ninguna —</p>`}
+      </div>
+      <div class="add-repo">
+        <input type="text" id="cp-new-branch" placeholder="development" />
+        <button class="btn btn-accent" id="cp-add-branch">Añadir rama</button>
+      </div>
+      <div class="add-repo">
+        <button class="btn" id="cp-save">Guardar prefijo y opción</button>
+      </div>
+    </div>`;
 const THEMES = [
   { id: "one-dark", label: "One Dark Pro" },
   { id: "dracula", label: "Dracula" },
@@ -1628,6 +1773,7 @@ function openSettings() {
           <span class="muted" style="align-self:center">segundos</span>
         </div>
       </div>
+      ${isGitlab() ? cherryPickSettingsCard(cfg) : ""}
       <div class="settings-card">
         <h4>Tema de sintaxis 🎨</h4>
         <p class="muted">Colores del resaltado de código en la pantalla de Cambios.</p>
@@ -1700,6 +1846,33 @@ function openSettings() {
     state.config = await window.pulpo.setConfig({ theme });
     applyTheme(theme);
   });
+
+  // --- Cherry-pick de hotfix (solo GitLab) ---
+  const saveCherryPick = async (partial) => {
+    const cp = { ...(state.config.cherryPick || {}), ...partial };
+    state.config = await window.pulpo.setConfig({ cherryPick: cp });
+  };
+  $("#cp-save")?.addEventListener("click", async () => {
+    const prefix = $("#cp-prefix").value.trim();
+    if (!prefix) return toast("El prefijo no puede estar vacío", "err");
+    await saveCherryPick({ prefix, siblingMx: $("#cp-sibling").checked });
+    toast("Cherry-pick configurado", "ok");
+    openSettings();
+  });
+  $("#cp-add-branch")?.addEventListener("click", async () => {
+    const value = $("#cp-new-branch").value.trim();
+    if (!BRANCH_RE.test(value)) return toast("Nombre de rama no válido", "err");
+    const branches = [...new Set([...(cfg.cherryPick?.branches || []), value])];
+    await saveCherryPick({ branches });
+    openSettings();
+  });
+  root.querySelectorAll("[data-cp-del]").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const branches = (cfg.cherryPick?.branches || []).filter((b) => b !== btn.dataset.cpDel);
+      await saveCherryPick({ branches });
+      openSettings();
+    }),
+  );
 
   window.pulpo.aiStatus().then((s) => {
     const line = $("#ai-status-line");

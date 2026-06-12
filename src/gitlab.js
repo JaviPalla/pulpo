@@ -505,6 +505,24 @@ async function forceUpdateBranch(repoFullName, branchName, sha) {
   }
 }
 
+/**
+ * Cherry-pick del contenido de una MR (el merge commit) sobre otra rama.
+ * GitLab acepta el SHA del merge commit y replica el rango completo de la MR,
+ * igual que el botón "Cherry-pick" de la UI de la MR.
+ * Con dryRun no escribe: sirve para anticipar conflictos antes de ofrecerlo.
+ * No lanza: devuelve {branch, ok, error?} para poder reportar por-rama (no atómico entre N ramas).
+ */
+async function cherryPick(repoFullName, sha, branch, { dryRun = false } = {}) {
+  const body = { branch };
+  if (dryRun) body.dry_run = true;
+  try {
+    await api("POST", `/projects/${proj(repoFullName)}/repository/commits/${encodeURIComponent(sha)}/cherry_pick`, body);
+    return { branch, ok: true };
+  } catch (err) {
+    return { branch, ok: false, error: String(err.message || err) };
+  }
+}
+
 /** GitLab revierte creando un commit directo en la rama destino (no abre MR). */
 async function revertPullRequest(encodedId) {
   const { repo, iid } = decodeId(encodedId);
@@ -624,6 +642,7 @@ module.exports = {
   submitReview,
   createBranch,
   forceUpdateBranch,
+  cherryPick,
   revertPullRequest,
   setPrDraft,
   prNodeId,

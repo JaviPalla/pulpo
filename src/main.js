@@ -97,6 +97,14 @@ function wireIpc() {
     }
     if (typeof partial.lastRepo === "string") allowed.lastRepo = partial.lastRepo;
     if (typeof partial.lastBucket === "string") allowed.lastBucket = partial.lastBucket;
+    if (partial.cherryPick && typeof partial.cherryPick === "object") {
+      const cp = partial.cherryPick;
+      const branchRe = /^[\w./-]{1,200}$/;
+      const next = { ...current.cherryPick };
+      if (typeof cp.prefix === "string" && cp.prefix.trim()) next.prefix = cp.prefix.trim();
+      if (Array.isArray(cp.branches)) next.branches = cp.branches.filter((b) => typeof b === "string" && branchRe.test(b));
+      if (typeof cp.siblingMx === "boolean") next.siblingMx = cp.siblingMx;
+      allowed.cherryPick = next;
     if (partial.milestones && typeof partial.milestones === "object") {
       const m = partial.milestones;
       const next = { ...current.milestones };
@@ -160,6 +168,10 @@ function wireIpc() {
   ipcMain.handle("git:forceUpdate", async (_event, { repo, branch, sha }) => {
     if (!BRANCH_RE.test(branch)) throw new Error("Nombre de rama no válido");
     return gh().forceUpdateBranch(repo, branch, sha);
+  });
+  ipcMain.handle("pr:cherryPick", async (_event, { repo, sha, branch, dryRun }) => {
+    if (!BRANCH_RE.test(branch)) throw new Error("Nombre de rama no válido");
+    return gh().cherryPick(repo, sha, branch, { dryRun: Boolean(dryRun) });
   });
   ipcMain.handle("pr:revert", async (_event, { repo, number }) => {
     const nodeId = await gh().prNodeId(repo, number);
