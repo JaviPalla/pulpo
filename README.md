@@ -5,9 +5,9 @@
 <h1 align="center">🐙 Pulpo</h1>
 
 <p align="center">
-  <b>Cliente de GitHub para Mac centrado en pull requests.</b><br/>
+  <b>Cliente de GitHub y GitLab para Mac centrado en pull/merge requests.</b><br/>
   Listado estilo Bitbucket · diffs y comentarios nativos · grafo de ramas · borradores de review.<br/>
-  <i>A macOS GitHub PR client: Bitbucket-style list, native diffs &amp; review drafts, branch graph.</i>
+  <i>A macOS GitHub &amp; GitLab PR/MR client: Bitbucket-style list, native diffs &amp; review drafts, branch graph.</i>
 </p>
 
 ---
@@ -74,15 +74,27 @@ pantalla de configuración guiada y botón de reintento. Una vez conectado, Pulp
 tus repositorios accesibles para que marques los que quieres vigilar (o añadas cualquier
 `owner/repo` a mano) — y puedes cambiarlos cuando quieras en Ajustes ⚙.
 
-### 1. GitHub (necesario)
+### 1. Proveedor: GitHub o GitLab (necesario)
 
-Pulpo no guarda tu token salvo que tú lo pidas. Orden de resolución:
+En el onboarding eliges **GitHub o GitLab** (un proveedor por instalación; se cambia en Ajustes ⚙).
+GitLab admite **gitlab.com y self-hosted** — al elegir GitLab puedes indicar la URL base de tu
+instancia (`https://gitlab.miempresa.com`). Los proyectos de GitLab pueden ir anidados
+(`group/subgrupo/proyecto`).
 
+Pulpo no guarda tu token salvo que tú lo pidas. Orden de resolución según el proveedor:
+
+**GitHub**
 1. Variable de entorno `GITHUB_TOKEN`
 2. `gh auth token` (GitHub CLI — lo habitual): `brew install gh && gh auth login`
-3. Token manual desde Ajustes ⚙ (queda en `~/Library/Application Support/pulpo/config.json`, permisos 600)
+3. Token manual desde Ajustes ⚙
 
-El token vive solo en el proceso principal: el renderer va sandboxed con CSP estricta y habla por IPC.
+**GitLab**
+1. Variable de entorno `GITLAB_TOKEN`
+2. `glab` CLI: `brew install glab && glab auth login`
+3. Token manual desde Ajustes ⚙
+
+El token manual queda en `~/Library/Application Support/pulpo/config.json` (permisos 600). Vive solo
+en el proceso principal: el renderer va sandboxed con CSP estricta y habla por IPC.
 
 ### 2. Claude (opcional — para 🤖 Review con IA)
 
@@ -101,8 +113,10 @@ npx electron-packager . Pulpo --platform=darwin --arch=arm64 --icon=build/icon.i
 ## Arquitectura
 
 ```
-src/main.js      ventana, IPC, notificaciones, selftest (--selftest[-route=list|changes|history])
-src/github.js    GraphQL (listado/detalle/grafo/update-branch) + REST (merge, diff, reviews)
+src/main.js      ventana, IPC (enrutado por proveedor), notificaciones, selftest (--selftest[-route=list|changes|history])
+src/provider.js  router GitHub/GitLab según config.provider
+src/github.js    GitHub: GraphQL (listado/detalle/grafo/update-branch) + REST (merge, diff, reviews)
+src/gitlab.js    GitLab: REST v4 (MR→forma PR); gitlab.com y self-hosted
 src/ai.js        review con IA: SDK de Anthropic o CLI de Claude Code, siempre como borradores
 src/drafts.js    borradores locales (userData/drafts.json)
 src/config.js    repos, polling, token manual opcional

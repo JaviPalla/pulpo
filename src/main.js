@@ -6,7 +6,10 @@ const { app, BrowserWindow, ipcMain, shell, nativeTheme, Notification } = requir
 const ai = require("./ai");
 const config = require("./config");
 const drafts = require("./drafts");
-const github = require("./github");
+const provider = require("./provider");
+
+// Proveedor activo (GitHub o GitLab) según config; se resuelve en cada llamada.
+const gh = () => provider.current();
 
 const SELFTEST = process.argv.includes("--selftest");
 const SELFTEST_SHOT = "/tmp/pulpo-selftest.png";
@@ -52,10 +55,10 @@ function createWindow() {
 
 function wireIpc() {
   ipcMain.handle("auth:status", async () => {
-    const { token, source } = github.resolveToken();
+    const { token, source } = gh().resolveToken();
     if (!token) return { ok: false, source: null, login: null };
     try {
-      const me = await github.viewer();
+      const me = await gh().viewer();
       return { ok: true, source, login: me.login, avatarUrl: me.avatarUrl };
     } catch (err) {
       return { ok: false, source, login: null, error: String(err.message || err) };
@@ -69,41 +72,70 @@ function wireIpc() {
 
   ipcMain.handle("config:set", (_event, partial) => {
     const allowed = {};
-    if (Array.isArray(partial.repos)) allowed.repos = partial.repos.filter((r) => /^[\w.-]+\/[\w.-]+$/.test(r));
+    // GitLab admite paths anidados (group/sub/project); GitHub solo owner/repo.
+    const current = config.load();
+    const nextProvider = partial.provider === "github" || partial.provider === "gitlab" ? partial.provider : current.provider;
+    const repoRe = nextProvider === "gitlab" ? /^[\w.-]+(\/[\w.-]+)+$/ : /^[\w.-]+\/[\w.-]+$/;
+    if (Array.isArray(partial.repos)) allowed.repos = partial.repos.filter((r) => repoRe.test(r));
     if (Number.isInteger(partial.pollSeconds) && partial.pollSeconds >= 15) allowed.pollSeconds = partial.pollSeconds;
+    if (partial.provider === "github" || partial.provider === "gitlab") {
+      allowed.provider = partial.provider;
+      // Cambiar de proveedor invalida el token: era de otro sitio.
+      if (partial.provider !== current.provider) {
+        allowed.token = null;
+        gh().invalidateTokenCache();
+      }
+    }
+    if (typeof partial.gitlabBaseUrl === "string" && /^https:\/\/[\w.-]+/.test(partial.gitlabBaseUrl.trim())) {
+      allowed.gitlabBaseUrl = partial.gitlabBaseUrl.trim().replace(/\/+$/, "");
+      gh().invalidateTokenCache();
+    }
     if (typeof partial.token === "string") {
       allowed.token = partial.token.trim() || null;
-      github.invalidateTokenCache();
+      gh().invalidateTokenCache();
     }
     if (typeof partial.lastRepo === "string") allowed.lastRepo = partial.lastRepo;
     if (typeof partial.lastBucket === "string") allowed.lastBucket = partial.lastBucket;
+    if (partial.milestones && typeof partial.milestones === "object") {
+      const m = partial.milestones;
+      const next = { ...current.milestones };
+      if (typeof m.group === "string") next.group = m.group.trim() || null;
+      else if (m.group === null) next.group = null;
+      if (Array.isArray(m.statusLabels)) {
+        next.statusLabels = m.statusLabels.filter((l) => typeof l === "string" && l.trim());
+      }
+      if (Array.isArray(m.doneLabels)) {
+        next.doneLabels = m.doneLabels.filter((l) => typeof l === "string" && l.trim());
+      }
+      allowed.milestones = next;
+    }
     const { token, ...rest } = config.save(allowed);
     return { ...rest, hasManualToken: Boolean(token) };
   });
 
-  ipcMain.handle("repos:suggest", async () => github.viewerRepos());
+  ipcMain.handle("repos:suggest", async () => gh().viewerRepos());
 
-  ipcMain.handle("prs:list", async (_event, { repo, states }) => github.listPRs(repo, states));
-  ipcMain.handle("prs:search", async (_event, { repos, states }) => github.searchPRs(repos, states));
-  ipcMain.handle("pr:detail", async (_event, { repo, number }) => github.prDetail(repo, number));
+  ipcMain.handle("prs:list", async (_event, { repo, states }) => gh().listPRs(repo, states));
+  ipcMain.handle("prs:search", async (_event, { repos, states }) => gh().searchPRs(repos, states));
+  ipcMain.handle("pr:detail", async (_event, { repo, number }) => gh().prDetail(repo, number));
   ipcMain.handle("pr:merge", async (_event, { repo, number, deleteBranch, headRefName, isCrossRepository }) =>
-    github.mergePR(repo, number, { deleteBranch, headRefName, isCrossRepository }),
+    gh().mergePR(repo, number, { deleteBranch, headRefName, isCrossRepository }),
   );
-  ipcMain.handle("pr:updateBranch", async (_event, { nodeId }) => github.updateBranchRebase(nodeId));
+  ipcMain.handle("pr:updateBranch", async (_event, { nodeId }) => gh().updateBranchRebase(nodeId));
 
-  ipcMain.handle("pr:files", async (_event, { repo, number }) => github.prFiles(repo, number));
-  ipcMain.handle("pr:conversation", async (_event, { repo, number }) => github.prConversation(repo, number));
+  ipcMain.handle("pr:files", async (_event, { repo, number }) => gh().prFiles(repo, number));
+  ipcMain.handle("pr:conversation", async (_event, { repo, number }) => gh().prConversation(repo, number));
   ipcMain.handle("pr:commentIssue", async (_event, { repo, number, body }) =>
-    github.addIssueComment(repo, number, body),
+    gh().addIssueComment(repo, number, body),
   );
   ipcMain.handle("pr:commentInline", async (_event, { repo, number, comment }) =>
-    github.addInlineComment(repo, number, comment),
+    gh().addInlineComment(repo, number, comment),
   );
   ipcMain.handle("pr:replyThread", async (_event, { repo, number, commentDatabaseId, body }) =>
-    github.replyToThread(repo, number, commentDatabaseId, body),
+    gh().replyToThread(repo, number, commentDatabaseId, body),
   );
   ipcMain.handle("pr:submitReview", async (_event, { repo, number, review }) =>
-    github.submitReview(repo, number, review),
+    gh().submitReview(repo, number, review),
   );
   ipcMain.handle("pr:dismissReview", async (_event, { repo, number, reviewId, message }) =>
     github.dismissReview(repo, number, reviewId, String(message || "")),
@@ -117,22 +149,27 @@ function wireIpc() {
   ipcMain.handle("drafts:save", (_event, { key, items }) => drafts.saveFor(key, items));
   ipcMain.handle("drafts:keys", () => drafts.allKeys());
 
-  ipcMain.handle("history:branches", async (_event, { repo }) => github.defaultBranch(repo));
-  ipcMain.handle("history:graph", async (_event, { repo, branchSpecs }) => github.branchHistories(repo, branchSpecs));
+  ipcMain.handle("history:branches", async (_event, { repo }) => gh().defaultBranch(repo));
+  ipcMain.handle("history:graph", async (_event, { repo, branchSpecs }) => gh().branchHistories(repo, branchSpecs));
   const BRANCH_RE = /^[\w./-]{1,200}$/;
   ipcMain.handle("git:createBranch", async (_event, { repo, branch, sha }) => {
     if (!BRANCH_RE.test(branch)) throw new Error("Nombre de rama no válido");
-    return github.createBranch(repo, branch, sha);
+    return gh().createBranch(repo, branch, sha);
   });
   ipcMain.handle("git:forceUpdate", async (_event, { repo, branch, sha }) => {
     if (!BRANCH_RE.test(branch)) throw new Error("Nombre de rama no válido");
-    return github.forceUpdateBranch(repo, branch, sha);
+    return gh().forceUpdateBranch(repo, branch, sha);
   });
   ipcMain.handle("pr:revert", async (_event, { repo, number }) => {
-    const nodeId = await github.prNodeId(repo, number);
-    return github.revertPullRequest(nodeId);
+    const nodeId = await gh().prNodeId(repo, number);
+    return gh().revertPullRequest(nodeId);
   });
-  ipcMain.handle("pr:setDraft", async (_event, { nodeId, toDraft }) => github.setPrDraft(nodeId, Boolean(toDraft)));
+  ipcMain.handle("pr:setDraft", async (_event, { nodeId, toDraft }) => gh().setPrDraft(nodeId, Boolean(toDraft)));
+
+  ipcMain.handle("milestones:list", async () => gh().listMilestones());
+  ipcMain.handle("milestones:issues", async (_event, { title, includeClosed }) =>
+    gh().milestoneIssues(title, { includeClosed: Boolean(includeClosed) }),
+  );
 
   ipcMain.handle("shell:open", (_event, url) => {
     if (typeof url === "string" && /^https:\/\//.test(url)) shell.openExternal(url);

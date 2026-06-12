@@ -9,7 +9,7 @@ const state = {
   me: null,
   authSource: null,
   repo: null,
-  view: "prs", // "prs" | "history"
+  view: "prs", // "prs" | "history" | "milestones"
   bucket: "open",
   prs: [],
   openPrs: [],
@@ -26,6 +26,9 @@ const state = {
   selftestNotified: false,
   selftestOpenedDetail: false,
   history: { branches: [], enabled: new Set(), layout: null, rows: [], loading: false, selectedOid: null },
+  // Vista de Milestones (solo GitLab): tareas (issues) del milestone agrupadas por persona.
+  // filters.status: Map<label, "include"|"exclude"> (chip tri-estado); se siembra con doneLabels en "exclude".
+  milestones: { list: [], selectedTitle: null, issues: [], loading: false, filters: { status: new Map(), showClosed: false, seeded: false } },
   prSnapshot: null, // nº → {reviewDecision, checks, reviewMe} para detectar cambios y notificar
   cursor: -1, // selección con teclado (j/k) en la lista
   draftKeys: new Set(), // "owner/repo#n" con borradores guardados → badge 📝 en la lista
@@ -45,6 +48,13 @@ function esc(text) {
   div.textContent = text ?? "";
   return div.innerHTML;
 }
+
+/* ============ proveedor (GitHub | GitLab) ============ */
+const isGitlab = () => state.config?.provider === "gitlab";
+const providerName = () => (isGitlab() ? "GitLab" : "GitHub");
+// GitLab admite paths anidados (group/sub/project); GitHub solo owner/repo.
+const repoRe = () => (isGitlab() ? /^[\w.-]+(\/[\w.-]+)+$/ : /^[\w.-]+\/[\w.-]+$/);
+const repoPlaceholder = () => (isGitlab() ? "group/subgroup/project" : "owner/repo");
 
 function timeAgo(iso) {
   const seconds = Math.max(1, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -1313,7 +1323,7 @@ function openCommitPanel(oid) {
         <button class="btn" id="cp-copy">📋 Copiar SHA</button>
         <button class="btn" id="cp-branch">🌱 Crear rama desde aquí…</button>
         <button class="btn" id="cp-reset">⏪ Mover una rama a este commit…</button>
-        ${pr && pr.state === "MERGED" ? `<button class="btn btn-danger" id="cp-revert">↩️ Revertir PR #${pr.number} (crea PR de revert)</button>` : ""}
+        ${pr && pr.state === "MERGED" ? `<button class="btn btn-danger" id="cp-revert">↩️ Revertir #${pr.number} (${isGitlab() ? "commit de revert" : "crea PR de revert"})</button>` : ""}
       </div>
       <p class="muted">“Mover una rama” reescribe la punta de la rama (force). Pulpo te pedirá confirmación escrita; aún así, úsalo sabiendo lo que haces.</p>
     </div>`;
@@ -1395,14 +1405,19 @@ function resetBranchModal(commit) {
 
 function revertPRModal(pr) {
   const root = $("#modal-root");
+  // GitLab no abre MR de revert: crea un commit de revert directo en la rama destino.
+  const gitlab = isGitlab();
+  const desc = gitlab
+    ? "Crea un <b>commit de revert</b> directo en la rama destino (GitLab no abre una MR de revert)."
+    : "Crea una <b>PR de revert</b> (no toca la rama directamente). La revisas y la fusionas como cualquier otra.";
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal">
-        <h3>↩️ Revertir PR #${pr.number}</h3>
-        <p>Crea una <b>PR de revert</b> (no toca la rama directamente). La revisas y la fusionas como cualquier otra.</p>
+        <h3>↩️ Revertir #${pr.number}</h3>
+        <p>${desc}</p>
         <div class="modal-actions">
           <button class="btn" id="modal-cancel">Cancelar</button>
-          <button class="btn btn-danger" id="modal-confirm">Crear PR de revert</button>
+          <button class="btn btn-danger" id="modal-confirm">${gitlab ? "Crear commit de revert" : "Crear PR de revert"}</button>
         </div>
       </div>
     </div>`;
@@ -1411,8 +1426,13 @@ function revertPRModal(pr) {
     root.innerHTML = "";
     try {
       const revert = await window.pulpo.revertPR(state.repo, pr.number);
-      toast(`PR de revert creada: #${revert.number}`, "ok");
-      exitHistoryToPR(revert.number);
+      if (revert.number) {
+        toast(`PR de revert creada: #${revert.number}`, "ok");
+        exitHistoryToPR(revert.number);
+      } else {
+        toast("Commit de revert creado", "ok");
+        if (revert.url) window.pulpo.openExternal(revert.url);
+      }
     } catch (err) {
       toast(`Revert falló: ${String(err.message || err)}`, "err");
     }
@@ -1538,20 +1558,32 @@ function openSettings() {
       <button class="btn" id="settings-back">← Volver</button>
       <h2 style="margin-top:14px">Ajustes</h2>
       <div class="settings-card">
+        <h4>Proveedor</h4>
+        <p class="muted">Actual: <b>${providerName()}</b>${isGitlab() ? ` · <code>${esc(cfg.gitlabBaseUrl || "https://gitlab.com")}</code>` : ""}.</p>
+        ${isGitlab() ? `<div class="add-repo">
+          <input type="text" id="gitlab-base" placeholder="URL base (self-hosted)" value="${esc(cfg.gitlabBaseUrl || "https://gitlab.com")}" />
+          <button class="btn" id="save-gitlab-base">Guardar URL</button>
+        </div>` : ""}
+        <div class="add-repo">
+          <button class="btn" id="switch-provider" data-target="${isGitlab() ? "github" : "gitlab"}">Cambiar a ${isGitlab() ? "GitHub 🐙" : "GitLab 🦊"}</button>
+        </div>
+        <p class="muted">Cambiar de proveedor reinicia el onboarding (repos y token se piden de nuevo).</p>
+      </div>
+      <div class="settings-card">
         <h4>Repositorios</h4>
         <div id="repo-lines">
           ${cfg.repos.map((r) => `<div class="repo-line">${esc(r)} <button class="btn" data-del="${esc(r)}">Quitar</button></div>`).join("")}
         </div>
         <div class="add-repo">
-          <input type="text" id="new-repo" placeholder="owner/repo" />
+          <input type="text" id="new-repo" placeholder="${repoPlaceholder()}" />
           <button class="btn btn-accent" id="add-repo">Añadir</button>
         </div>
       </div>
       <div class="settings-card">
-        <h4>Token de GitHub</h4>
-        <p class="muted">Origen actual: <b>${esc(state.authSource || "ninguno")}</b>. Orden: <code>GITHUB_TOKEN</code> → <code>gh auth token</code> → token manual.</p>
+        <h4>Token de ${providerName()}</h4>
+        <p class="muted">Origen actual: <b>${esc(state.authSource || "ninguno")}</b>. Orden: <code>${isGitlab() ? "GITLAB_TOKEN" : "GITHUB_TOKEN"}</code> → <code>${isGitlab() ? "glab CLI" : "gh auth token"}</code> → token manual.</p>
         <div class="add-repo">
-          <input type="password" id="manual-token" placeholder="${cfg.hasManualToken ? "•••••••• (guardado)" : "ghp_… (opcional)"}" />
+          <input type="password" id="manual-token" placeholder="${cfg.hasManualToken ? "•••••••• (guardado)" : isGitlab() ? "glpat-… (opcional)" : "ghp_… (opcional)"}" />
           <button class="btn" id="save-token">Guardar</button>
         </div>
       </div>
@@ -1586,10 +1618,26 @@ function openSettings() {
   });
   $("#add-repo").addEventListener("click", async () => {
     const value = $("#new-repo").value.trim();
-    if (!/^[\w.-]+\/[\w.-]+$/.test(value)) return toast("Formato esperado: owner/repo", "err");
+    if (!repoRe().test(value)) return toast(`Formato esperado: ${repoPlaceholder()}`, "err");
     state.config = await window.pulpo.setConfig({ repos: [...cfg.repos, value] });
     renderRepoSelect();
     openSettings();
+  });
+  $("#switch-provider")?.addEventListener("click", async () => {
+    const target = $("#switch-provider").dataset.target;
+    // Cambiar de proveedor vacía repos y token: el onboarding los pedirá de nuevo.
+    state.config = await window.pulpo.setConfig({ provider: target, repos: [] });
+    state.repo = null;
+    root.classList.add("hidden");
+    root.innerHTML = "";
+    boot();
+  });
+  $("#save-gitlab-base")?.addEventListener("click", async () => {
+    const base = $("#gitlab-base").value.trim();
+    if (!/^https:\/\/[\w.-]+/.test(base)) return toast("URL no válida (https://…)", "err");
+    state.config = await window.pulpo.setConfig({ gitlabBaseUrl: base });
+    toast("URL base guardada", "ok");
+    boot();
   });
   root.querySelectorAll("[data-del]").forEach((btn) =>
     btn.addEventListener("click", async () => {
@@ -1628,9 +1676,64 @@ function openSettings() {
 }
 
 /* ============ bienvenida / onboarding ============ */
+
+/** Primer paso del onboarding: elegir proveedor (GitHub o GitLab). */
+async function renderProviderChooser() {
+  list.innerHTML = `
+    <div class="welcome">
+      <div class="welcome-logo">🐙</div>
+      <h2>¿Con qué trabajas?</h2>
+      <p class="muted">Elige tu proveedor. Podrás cambiarlo luego en Ajustes ⚙.</p>
+      <div class="provider-choice">
+        <button class="repo-option provider-option" data-provider="github">
+          <span class="repo-name">🐙 GitHub</span>
+        </button>
+        <button class="repo-option provider-option" data-provider="gitlab">
+          <span class="repo-name">🦊 GitLab</span>
+        </button>
+      </div>
+      <div class="add-repo picker-manual" id="gitlab-base-row" style="display:none">
+        <input type="text" id="gitlab-base-input" placeholder="URL de GitLab (self-hosted): https://gitlab.miempresa.com" />
+      </div>
+      <div class="welcome-actions">
+        <button class="btn btn-accent" id="provider-continue" disabled>Continuar</button>
+      </div>
+    </div>`;
+
+  let chosen = null;
+  const baseRow = $("#gitlab-base-row");
+  const continueBtn = $("#provider-continue");
+  list.querySelectorAll("[data-provider]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      chosen = btn.dataset.provider;
+      list.querySelectorAll(".provider-option").forEach((b) => b.classList.toggle("selected", b === btn));
+      baseRow.style.display = chosen === "gitlab" ? "" : "none";
+      continueBtn.disabled = false;
+    }),
+  );
+  continueBtn.addEventListener("click", async () => {
+    if (!chosen) return;
+    const partial = { provider: chosen };
+    if (chosen === "gitlab") {
+      const base = $("#gitlab-base-input").value.trim();
+      if (base) {
+        if (!/^https:\/\/[\w.-]+/.test(base)) return toast("URL no válida (https://…)", "err");
+        partial.gitlabBaseUrl = base;
+      }
+    }
+    state.config = await window.pulpo.setConfig(partial);
+    boot();
+  });
+  notifySelftestOnce();
+}
+
 async function renderWelcome() {
   const aiStatus = await window.pulpo.aiStatus().catch(() => ({ backend: null, detail: "" }));
   const aiOk = Boolean(aiStatus.backend);
+  const gitlab = isGitlab();
+  const cliCmd = gitlab ? "brew install glab && glab auth login" : "brew install gh && gh auth login";
+  const cliName = gitlab ? "CLI oficial de GitLab (glab)" : "CLI oficial de GitHub";
+  const envVar = gitlab ? "GITLAB_TOKEN" : "GITHUB_TOKEN";
   list.innerHTML = `
     <div class="welcome">
       <div class="welcome-logo">🐙</div>
@@ -1640,10 +1743,10 @@ async function renderWelcome() {
       <div class="setup-step bad">
         <div class="setup-mark">1</div>
         <div>
-          <b>Conecta GitHub</b> <span class="chip chip-closed">pendiente</span>
-          <p class="muted">La vía fácil es el CLI oficial de GitHub — Pulpo coge el token de ahí:</p>
-          <pre class="setup-cmd">brew install gh && gh auth login</pre>
-          <p class="muted">Alternativas: exporta <code>GITHUB_TOKEN</code>, o pega un token en Ajustes ⚙.</p>
+          <b>Conecta ${providerName()}</b> <span class="chip chip-closed">pendiente</span>
+          <p class="muted">La vía fácil es el ${cliName} — Pulpo coge el token de ahí:</p>
+          <pre class="setup-cmd">${cliCmd}</pre>
+          <p class="muted">Alternativas: exporta <code>${envVar}</code>, o pega un token en Ajustes ⚙.</p>
         </div>
       </div>
 
@@ -1684,7 +1787,7 @@ async function renderRepoPicker() {
       <p class="muted">Conectado como <b>${esc(state.me?.login || "?")}</b>. Marca los repos que Pulpo vigilará — podrás cambiarlos cuando quieras en Ajustes ⚙.</p>
       <div id="repo-picker" class="repo-picker"><div class="empty">Buscando tus repositorios…</div></div>
       <div class="add-repo picker-manual">
-        <input type="text" id="picker-manual-input" placeholder="¿Falta alguno? Escríbelo: owner/repo" />
+        <input type="text" id="picker-manual-input" placeholder="¿Falta alguno? Escríbelo: ${repoPlaceholder()}" />
         <button class="btn" id="picker-manual-add">Añadir</button>
       </div>
       <div class="welcome-actions">
@@ -1735,7 +1838,7 @@ async function renderRepoPicker() {
   const addManual = () => {
     const input = $("#picker-manual-input");
     const value = input.value.trim();
-    if (!/^[\w.-]+\/[\w.-]+$/.test(value)) return toast("Formato esperado: owner/repo", "err");
+    if (!repoRe().test(value)) return toast(`Formato esperado: ${repoPlaceholder()}`, "err");
     selected.add(value);
     input.value = "";
     renderRows();
@@ -1754,6 +1857,259 @@ async function renderRepoPicker() {
   notifySelftestOnce();
 }
 
+/* ============ vista milestones (solo GitLab) ============ */
+async function enterMilestones() {
+  if (!isGitlab()) {
+    toast("La vista de Milestones solo está disponible en GitLab", "");
+    return;
+  }
+  state.view = "milestones";
+  closeDetail();
+  document.querySelectorAll(".bucket").forEach((b) => b.classList.remove("active"));
+  $("#bucket-milestones")?.classList.add("active");
+  await loadMilestones();
+}
+
+async function loadMilestones() {
+  const m = state.milestones;
+  // Por defecto, las labels "terminada no cerrada" arrancan ocultas (chip en "excluir").
+  if (!m.filters.seeded) {
+    for (const label of state.config?.milestones?.doneLabels || []) m.filters.status.set(label, "exclude");
+    m.filters.seeded = true;
+  }
+  m.loading = true;
+  renderMilestones();
+  try {
+    if (!m.list.length) m.list = await window.pulpo.listMilestones();
+    if (!m.selectedTitle && m.list.length) m.selectedTitle = pickCurrentMilestone(m.list);
+    // Solo traemos cerradas si el usuario las pide: en grupos activos son miles y
+    // no deben desplazar a las abiertas dentro del límite de paginación.
+    m.issues = m.selectedTitle ? await window.pulpo.milestoneIssues(m.selectedTitle, m.filters.showClosed) : [];
+    m.loading = false;
+    renderMilestones();
+  } catch (err) {
+    m.loading = false;
+    list.innerHTML = `<div class="error-box">${esc(String(err.message || err))}</div>`;
+    notifySelftestOnce();
+  }
+}
+
+// Milestone "vigente": descartamos los claramente futuros (empiezan después de hoy) y
+// pasados (vencieron antes de hoy); entre los que quedan, el que contiene hoy en su rango,
+// si no el primero vigente, y como último recurso el primero de la lista. Fechas ISO
+// (YYYY-MM-DD) se comparan como string sin problema.
+function pickCurrentMilestone(list) {
+  const today = new Date().toISOString().slice(0, 10);
+  const live = list.filter((ms) => {
+    if (ms.startDate && ms.startDate > today) return false; // futuro
+    if (ms.dueDate && ms.dueDate < today) return false; // pasado
+    return true;
+  });
+  const containing = live.find((ms) => (!ms.startDate || ms.startDate <= today) && (!ms.dueDate || ms.dueDate >= today));
+  return (containing || live[0] || list[0])?.title || null;
+}
+
+// Reparte cada issue en sus asignados (un issue con N asignados aparece en N personas:
+// cada quien ve su tarea pendiente). Los huérfanos caen en "Sin asignar".
+function groupIssuesByAssignee(issues) {
+  const UNASSIGNED = "__unassigned__";
+  const groups = new Map();
+  for (const iss of issues) {
+    const targets = iss.assignees.length ? iss.assignees : [{ username: UNASSIGNED, name: "Sin asignar", avatarUrl: null }];
+    for (const a of targets) {
+      if (!groups.has(a.username)) groups.set(a.username, { ...a, issues: [] });
+      groups.get(a.username).issues.push(iss);
+    }
+  }
+  return [...groups.values()].sort((a, b) => {
+    if (a.username === UNASSIGNED) return 1;
+    if (b.username === UNASSIGNED) return -1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function milestoneCard(iss, statusSet) {
+  const chips = iss.labels
+    .map((l) => {
+      const isStatus = statusSet.has(l.name);
+      const style = l.color ? `style="background:${l.color};color:${l.textColor || "#fff"}"` : "";
+      return `<span class="ms-label ${isStatus ? "status" : ""}" ${style}>${esc(l.name)}</span>`;
+    })
+    .join("");
+  return `
+    <div class="ms-task ${iss.state === "closed" ? "closed" : ""}">
+      <button class="ms-task-title" data-url="${esc(iss.webUrl)}" title="Abrir en GitLab">
+        ${esc(iss.title)} <span class="ms-iid">#${iss.iid}</span>
+      </button>
+      ${chips ? `<div class="ms-task-labels">${chips}</div>` : ""}
+    </div>`;
+}
+
+// Métricas sobre un conjunto de issues ABIERTOS (independientes de los filtros de la vista):
+//  - "sin programar": abierto sin ninguna etiqueta de estado (no se ha planificado todavía).
+//  - "en comprobar": terminada pero no cerrada (lleva alguna doneLabel).
+function milestoneMetrics(openIssues, statusSet, doneSet) {
+  const total = openIssues.length;
+  let unscheduled = 0;
+  let checking = 0;
+  for (const iss of openIssues) {
+    const names = iss.labels.map((l) => l.name);
+    if (!names.some((n) => statusSet.has(n))) unscheduled++;
+    if (names.some((n) => doneSet.has(n))) checking++;
+  }
+  const pct = (x) => (total ? Math.round((100 * x) / total) : 0);
+  return { total, unscheduled, checking, unschedPct: pct(unscheduled), checkPct: pct(checking) };
+}
+
+// Indicador circular tipo gráfica: el anillo se rellena según el % y el número va dentro.
+function metricCircle(pct, count, total, label, colorVar, hint, cls) {
+  return `
+    <div class="ms-metric ${cls}" title="${esc(hint)}">
+      <span class="ms-donut" style="--pct:${pct};--donut-color:var(${colorVar})"><span class="ms-donut-num">${pct}%</span></span>
+      <span class="ms-metric-label">${label} <span class="muted">${count}/${total}</span></span>
+    </div>`;
+}
+
+function metricsBadges(mm, cls) {
+  return (
+    metricCircle(mm.unschedPct, mm.unscheduled, mm.total, "Sin programar", "--yellow", "Abiertas sin etiqueta de estado: aún sin planificar", cls) +
+    metricCircle(mm.checkPct, mm.checking, mm.total, "En comprobar", "--green", "Terminadas pero no cerradas: en fase de comprobación", cls)
+  );
+}
+
+// Fecha de cierre del milestone + cuántos días faltan (o si ya venció).
+function milestoneDueInfo(selectedMs) {
+  if (!selectedMs?.dueDate) return "";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(`${selectedMs.dueDate}T00:00:00`);
+  const days = Math.round((due - today) / 86400000);
+  const [y, mo, d] = selectedMs.dueDate.split("-");
+  const dateStr = `${d}/${mo}/${y}`;
+  const rel =
+    days > 0 ? `faltan ${days} día${days === 1 ? "" : "s"}`
+    : days === 0 ? "vence hoy"
+    : `vencido hace ${-days} día${-days === 1 ? "" : "s"}`;
+  const cls = days < 0 ? "overdue" : days <= 3 ? "soon" : "";
+  return `<span class="ms-due ${cls}">Cierre: <b>${dateStr}</b> · ${rel}</span>`;
+}
+
+function renderMilestones() {
+  if (state.view !== "milestones") return;
+  const m = state.milestones;
+  if (m.loading) {
+    list.innerHTML = `<div class="loading">Cargando milestone…</div>`;
+    return;
+  }
+
+  const statusLabels = state.config?.milestones?.statusLabels || [];
+  const statusSet = new Set(statusLabels);
+  const doneSet = new Set(state.config?.milestones?.doneLabels || []);
+  const search = state.search.trim().toLowerCase();
+
+  // Filtros tri-estado: incluir (solo estas) y excluir (ocultar estas).
+  const includes = [];
+  const excludes = new Set();
+  for (const [label, mode] of m.filters.status) {
+    if (mode === "include") includes.push(label);
+    else if (mode === "exclude") excludes.add(label);
+  }
+
+  const visible = m.issues.filter((iss) => {
+    if (!m.filters.showClosed && iss.state === "closed") return false;
+    const names = iss.labels.map((l) => l.name);
+    if (excludes.size && names.some((n) => excludes.has(n))) return false;
+    if (includes.length && !names.some((n) => includes.includes(n))) return false;
+    if (search && !`${iss.title} ${names.join(" ")}`.toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  // Las métricas se calculan SIEMPRE sobre las abiertas completas, no sobre lo filtrado:
+  // ocultar "en comprobar" no debe poner ese % a cero.
+  const openIssues = m.issues.filter((iss) => iss.state === "opened");
+  const openByMember = new Map(groupIssuesByAssignee(openIssues).map((g) => [g.username, g.issues]));
+  const milestoneMM = milestoneMetrics(openIssues, statusSet, doneSet);
+  const selectedMs = m.list.find((ms) => ms.title === m.selectedTitle);
+
+  const msOptions = m.list
+    .map((ms) => `<option value="${esc(ms.title)}" ${ms.title === m.selectedTitle ? "selected" : ""}>${esc(ms.title)}${ms.dueDate ? ` · vence ${esc(ms.dueDate)}` : ""}</option>`)
+    .join("");
+  const statusChips = statusLabels
+    .map((label) => {
+      const mode = m.filters.status.get(label);
+      const cls = mode === "include" ? "on" : mode === "exclude" ? "off" : "";
+      const hint = mode === "include" ? "Solo estas · clic: ocultar" : mode === "exclude" ? "Ocultas · clic: quitar filtro" : "Clic: solo estas";
+      return `<button class="ms-status-chip ${cls}" data-label="${esc(label)}" title="${hint}">${esc(label)}</button>`;
+    })
+    .join("");
+
+  const groups = groupIssuesByAssignee(visible);
+  const boardHtml = groups.length
+    ? groups
+        .map((g) => {
+          const gm = milestoneMetrics(openByMember.get(g.username) || [], statusSet, doneSet);
+          return `
+        <section class="ms-group">
+          <header class="ms-group-head">
+            ${g.avatarUrl ? `<img class="ms-avatar" src="${esc(g.avatarUrl)}" alt="" />` : `<span class="ms-avatar ph">∅</span>`}
+            <span class="ms-group-name">${esc(g.name)}</span>
+            <span class="ms-group-count">${g.issues.length}</span>
+          </header>
+          <div class="ms-group-metrics">${metricsBadges(gm, "mini")}</div>
+          <div class="ms-tasks">${g.issues.map((iss) => milestoneCard(iss, statusSet)).join("")}</div>
+        </section>`;
+        })
+        .join("")
+    : `<div class="empty">No hay tareas que mostrar con estos filtros.</div>`;
+
+  list.innerHTML = `
+    <div class="ms-toolbar">
+      <select id="ms-select" class="ms-select" title="Milestone">${msOptions || `<option>Sin milestones activos</option>`}</select>
+      <label class="ms-closed-toggle"><input type="checkbox" id="ms-show-closed" ${m.filters.showClosed ? "checked" : ""} /> Mostrar cerradas</label>
+      <span class="ms-counter">${visible.length} tarea${visible.length === 1 ? "" : "s"}</span>
+      <button class="icon-btn" id="ms-refresh" title="Recargar">⟳</button>
+    </div>
+    <div class="ms-summary">
+      ${metricsBadges(milestoneMM, "")}
+      ${milestoneDueInfo(selectedMs)}
+      <span class="muted ms-summary-total">${milestoneMM.total} abiertas</span>
+    </div>
+    ${statusChips ? `<div class="ms-status-bar"><span class="ms-status-hint">Estado:</span>${statusChips}</div>` : ""}
+    <div class="ms-board">${boardHtml}</div>`;
+
+  $("#ms-select")?.addEventListener("change", (event) => {
+    m.selectedTitle = event.target.value;
+    m.issues = [];
+    loadMilestones();
+  });
+  $("#ms-show-closed")?.addEventListener("change", (event) => {
+    m.filters.showClosed = event.target.checked;
+    // El alcance abiertas/todas se decide en el fetch, así que recargamos.
+    m.issues = [];
+    loadMilestones();
+  });
+  $("#ms-refresh")?.addEventListener("click", () => {
+    m.list = [];
+    m.issues = [];
+    loadMilestones();
+  });
+  list.querySelectorAll(".ms-status-chip").forEach((chip) =>
+    chip.addEventListener("click", () => {
+      // Ciclo tri-estado: neutro → incluir → excluir → neutro.
+      const label = chip.dataset.label;
+      const mode = m.filters.status.get(label);
+      if (!mode) m.filters.status.set(label, "include");
+      else if (mode === "include") m.filters.status.set(label, "exclude");
+      else m.filters.status.delete(label);
+      renderMilestones();
+    }),
+  );
+  list.querySelectorAll(".ms-task-title").forEach((btn) =>
+    btn.addEventListener("click", () => window.pulpo.openExternal(btn.dataset.url)),
+  );
+  notifySelftestOnce();
+}
+
 /* ============ arranque ============ */
 function renderRepoSelect() {
   const select = $("#repo-select");
@@ -1768,6 +2124,12 @@ function renderRepoSelect() {
 
 async function boot() {
   state.config = await window.pulpo.getConfig();
+  // Instalación nueva (sin proveedor ni repos): primero elegimos GitHub o GitLab.
+  // Los instalados de antes (con repos pero sin provider) siguen en GitHub por defecto.
+  if (!state.config.provider && !state.config.repos.length) {
+    await renderProviderChooser();
+    return;
+  }
   const remembered = state.config.lastRepo;
   state.repo =
     (state.repo && state.config.repos.includes(state.repo) && state.repo) ||
@@ -1780,6 +2142,11 @@ async function boot() {
   document.querySelector(`[data-bucket="${state.bucket}"]`)?.classList.add("active");
   state.draftKeys = new Set(await window.pulpo.draftsKeys().catch(() => []));
   renderRepoSelect();
+  // La vista de Milestones es solo GitLab: no pintar una entrada muerta en GitHub.
+  if (!isGitlab()) {
+    $("#nav-milestones-section")?.classList.add("hidden");
+    $("#bucket-milestones")?.classList.add("hidden");
+  }
 
   const auth = await window.pulpo.authStatus();
   state.authSource = auth.source;
@@ -1800,6 +2167,7 @@ async function boot() {
   schedulePoll();
   if (IS_SELFTEST && SELFTEST_ROUTE === "history") enterHistory();
   if (IS_SELFTEST && SELFTEST_ROUTE === "merged") switchBucket("merged");
+  if (IS_SELFTEST && SELFTEST_ROUTE === "milestones") enterMilestones();
 }
 
 $("#refresh").addEventListener("click", refresh);
@@ -1815,12 +2183,14 @@ $("#repo-select").addEventListener("change", (event) => {
 });
 $("#search").addEventListener("input", (event) => {
   state.search = event.target.value;
-  renderList();
+  if (state.view === "milestones") renderMilestones();
+  else renderList();
 });
 document.querySelectorAll(".bucket[data-bucket]").forEach((btn) =>
   btn.addEventListener("click", () => switchBucket(btn.dataset.bucket)),
 );
 $("#bucket-history").addEventListener("click", enterHistory);
+$("#bucket-milestones").addEventListener("click", enterMilestones);
 /* ============ paleta de comandos (⌘K) ============ */
 function paletteEntries() {
   const entries = [];
@@ -1832,6 +2202,7 @@ function paletteEntries() {
     });
   }
   entries.push({ label: "Ir a: Histórico", hint: "grafo de ramas", run: enterHistory });
+  if (isGitlab()) entries.push({ label: "Ir a: Milestones", hint: "tareas por persona", run: enterMilestones });
   for (const [bucket, label] of [["open", "Abiertas"], ["mine", "Mías"], ["review", "Para revisar"], ["draft", "Borradores"], ["merged", "Fusionadas"], ["closed", "Cerradas"]]) {
     entries.push({ label: `Ir a: ${label}`, hint: "bucket", run: () => switchBucket(bucket) });
   }
@@ -1865,7 +2236,8 @@ function switchRepo(repo) {
   renderRepoSelect();
   closeDetail();
   if (state.view === "history") loadHistory();
-  else refresh();
+  // Milestones es de grupo (global), no por repo: el cambio de repo no la afecta.
+  else if (state.view !== "milestones") refresh();
 }
 
 function openPalette() {
@@ -1936,6 +2308,7 @@ function openCheatsheet() {
     ["Enter", "Abrir la PR seleccionada"],
     ["1 – 6", "Abiertas · Mías · Para revisar · Borradores · Fusionadas · Cerradas"],
     ["h", "Histórico (grafo de ramas)"],
+    ["m", "Milestones (tareas por persona · GitLab)"],
     ["r", "Refrescar"],
     ["Esc", "Cerrar el panel"],
     ["?", "Esta chuleta"],
@@ -1973,6 +2346,7 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (event.key === "h") return enterHistory();
+  if (event.key === "m" && isGitlab()) return enterMilestones();
   const bucketByDigit = { 1: "open", 2: "mine", 3: "review", 4: "draft", 5: "merged", 6: "closed" };
   if (bucketByDigit[event.key]) switchBucket(bucketByDigit[event.key]);
 });

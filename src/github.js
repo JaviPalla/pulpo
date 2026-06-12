@@ -352,6 +352,19 @@ async function forceUpdateBranch(repoFullName, branchName, sha) {
   });
 }
 
+/**
+ * Stubs de paridad: la vista de Milestones es una feature solo-GitLab
+ * (la UI la oculta cuando provider !== "gitlab"). Si alguien las invoca aquí,
+ * fallamos explícito en vez de romper en silencio. Mantiene la interfaz idéntica.
+ */
+async function listMilestones() {
+  throw new Error("La vista de Milestones solo está disponible en GitLab.");
+}
+
+async function milestoneIssues() {
+  throw new Error("La vista de Milestones solo está disponible en GitLab.");
+}
+
 async function revertPullRequest(prNodeId) {
   const data = await gql(
     `mutation ($id: ID!) {
@@ -415,4 +428,6 @@ module.exports = {
   revertPullRequest,
   setPrDraft,
   prNodeId,
+  listMilestones,
+  milestoneIssues,
 };

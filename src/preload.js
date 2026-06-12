@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld("pulpo", {
   forceUpdateBranch: (repo, branch, sha) => ipcRenderer.invoke("git:forceUpdate", { repo, branch, sha }),
   revertPR: (repo, number) => ipcRenderer.invoke("pr:revert", { repo, number }),
   setPrDraft: (nodeId, toDraft) => ipcRenderer.invoke("pr:setDraft", { nodeId, toDraft }),
+  listMilestones: () => ipcRenderer.invoke("milestones:list"),
+  milestoneIssues: (title, includeClosed) => ipcRenderer.invoke("milestones:issues", { title, includeClosed }),
   openExternal: (url) => ipcRenderer.invoke("shell:open", url),
   notify: (title, body) => ipcRenderer.invoke("notify", { title, body }),
   dockBadge: (text) => ipcRenderer.invoke("dock:badge", text),
