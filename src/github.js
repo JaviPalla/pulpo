@@ -360,6 +360,9 @@ async function forceUpdateBranch(repoFullName, branchName, sha) {
  */
 async function cherryPick() {
   throw new Error("El cherry-pick de hotfix solo está disponible en GitLab.");
+}
+
+/**
  * Stubs de paridad: la vista de Milestones es una feature solo-GitLab
  * (la UI la oculta cuando provider !== "gitlab"). Si alguien las invoca aquí,
  * fallamos explícito en vez de romper en silencio. Mantiene la interfaz idéntica.

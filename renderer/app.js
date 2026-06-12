@@ -1698,6 +1698,8 @@ function cherryPickSettingsCard(cfg) {
         <button class="btn" id="cp-save">Guardar prefijo y opción</button>
       </div>
     </div>`;
+}
+
 const THEMES = [
   { id: "one-dark", label: "One Dark Pro" },
   { id: "dracula", label: "Dracula" },
@@ -2182,19 +2184,22 @@ function milestoneMetrics(openIssues, statusSet, doneSet) {
   return { total, unscheduled, checking, unschedPct: pct(unscheduled), checkPct: pct(checking) };
 }
 
-// Indicador circular tipo gráfica: el anillo se rellena según el % y el número va dentro.
-function metricCircle(pct, count, total, label, colorVar, hint, cls) {
+// Indicador de progreso: etiqueta arriba, barra horizontal con el % y el número al final.
+function metricBar(pct, count, total, label, colorVar, hint, cls) {
   return `
     <div class="ms-metric ${cls}" title="${esc(hint)}">
-      <span class="ms-donut" style="--pct:${pct};--donut-color:var(${colorVar})"><span class="ms-donut-num">${pct}%</span></span>
-      <span class="ms-metric-label">${label} <span class="muted">${count}/${total}</span></span>
+      <span class="ms-metric-label">${label}</span>
+      <div class="ms-bar-row">
+        <span class="ms-bar"><span class="ms-bar-fill" style="width:${pct}%;background:var(${colorVar})"></span></span>
+        <span class="ms-metric-val">${pct}% <span class="muted">${count}/${total}</span></span>
+      </div>
     </div>`;
 }
 
 function metricsBadges(mm, cls) {
   return (
-    metricCircle(mm.unschedPct, mm.unscheduled, mm.total, "Sin programar", "--yellow", "Abiertas sin etiqueta de estado: aún sin planificar", cls) +
-    metricCircle(mm.checkPct, mm.checking, mm.total, "En comprobar", "--green", "Terminadas pero no cerradas: en fase de comprobación", cls)
+    metricBar(mm.unschedPct, mm.unscheduled, mm.total, "To do", "--yellow", "Abiertas sin etiqueta de estado: aún sin planificar", cls) +
+    metricBar(mm.checkPct, mm.checking, mm.total, "pending check", "--green", "Terminadas pero no cerradas: en fase de comprobación", cls)
   );
 }
 

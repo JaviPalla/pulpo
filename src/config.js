@@ -27,6 +27,7 @@ const DEFAULTS = {
     branches: ["development"],
     // Además, proponer la rama hermana de la release branch destino (mx ⇄ sin mx).
     siblingMx: true,
+  },
   // Vista de Milestones (solo GitLab): foto por persona de las tareas (issues) de un milestone de grupo.
   milestones: {
     // Grupo de GitLab del que leer milestones e issues. null = derivar del primer segmento de repos[].

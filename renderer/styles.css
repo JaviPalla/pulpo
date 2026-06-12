@@ -538,27 +538,24 @@ body {
   background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px;
 }
 .ms-summary-total { margin-left: auto; }
-/* Métrica = anillo de progreso (conic-gradient) + etiqueta corta autoexplicativa. */
-.ms-metric { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+/* Métrica = etiqueta + barra de progreso horizontal con % y conteo al final. */
+.ms-metric { display: flex; flex-direction: column; gap: 5px; min-width: 180px; }
 .ms-metric-label { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.2; }
-.ms-metric-label .muted { font-weight: 400; }
-.ms-donut {
-  --pct: 0; --size: 40px; --donut-color: var(--accent);
-  position: relative; width: var(--size); height: var(--size); border-radius: 50%;
-  flex-shrink: 0; display: grid; place-items: center;
-  background: conic-gradient(var(--donut-color) calc(var(--pct) * 1%), var(--gray-bg) 0);
+.ms-bar-row { display: flex; align-items: center; gap: 8px; }
+.ms-bar {
+  flex: 1; min-width: 40px; height: 6px; border-radius: 4px;
+  background: var(--gray-bg); overflow: hidden;
 }
-.ms-donut::after { content: ""; position: absolute; inset: 4px; border-radius: 50%; background: var(--bg-raised); }
-.ms-donut-num { position: relative; z-index: 1; font-size: 11px; font-weight: 700; color: var(--text); }
-.ms-metric.mini .ms-donut { --size: 30px; }
-.ms-metric.mini .ms-donut::after { inset: 3px; background: var(--bg); }
-.ms-metric.mini .ms-donut-num { font-size: 9px; }
+.ms-bar-fill { display: block; height: 100%; border-radius: 4px; transition: width 0.25s ease; }
+.ms-metric-val { font-size: 11px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.ms-metric-val .muted { font-weight: 400; }
+.ms-metric.mini { flex: 1; min-width: 0; }
 .ms-metric.mini .ms-metric-label { font-size: 11px; font-weight: 500; }
 .ms-due { font-size: 12px; color: var(--text-muted); }
 .ms-due b { color: var(--text); font-weight: 600; }
 .ms-due.soon b { color: var(--yellow); }
 .ms-due.overdue, .ms-due.overdue b { color: var(--red); }
-.ms-group-metrics { display: flex; gap: 16px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg); }
+.ms-group-metrics { display: flex; gap: 16px; flex-wrap: nowrap; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg); }
 .ms-board {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 14px; align-items: start;
