@@ -413,6 +413,54 @@ body {
 .diff-del { background: var(--red-bg); }
 .diff-del .code .sign { color: var(--red); }
 .diff-hunk td, .diff-meta td { background: var(--branch-bg); color: var(--branch-text); padding: 3px 12px; font-size: 11px; }
+
+/* ---------- temas de sintaxis (pantalla Cambios) ----------
+   El tema es dueño del FONDO del área de código; add/del son superposiciones
+   translúcidas verde/rojo sobre ese fondo, así los tres temas quedan coherentes
+   sin importar el modo claro/oscuro del SO. Solo afecta al diff, no al chrome. */
+[data-syntax-theme] .diff-table { background: var(--hl-bg); color: var(--hl-fg); }
+[data-syntax-theme] .diff-table .gutter { color: var(--hl-gutter); border-right-color: var(--hl-border); }
+[data-syntax-theme] .diff-ctx { background: transparent; }
+[data-syntax-theme] .diff-add { background: var(--hl-add); }
+[data-syntax-theme] .diff-del { background: var(--hl-del); }
+[data-syntax-theme] .code .sign { color: var(--hl-gutter); }
+[data-syntax-theme] .diff-add .code .sign { color: var(--hl-add-sign); }
+[data-syntax-theme] .diff-del .code .sign { color: var(--hl-del-sign); }
+
+.hl-com { color: var(--hl-com); font-style: italic; }
+.hl-str { color: var(--hl-str); }
+.hl-num { color: var(--hl-num); }
+.hl-kw { color: var(--hl-kw); }
+.hl-type { color: var(--hl-type); }
+.hl-fn { color: var(--hl-fn); }
+.hl-op { color: var(--hl-op); }
+.hl-punct { color: var(--hl-punct); }
+
+[data-syntax-theme="one-dark"] {
+  --hl-bg: #282c34; --hl-fg: #abb2bf; --hl-gutter: #5c6370; --hl-border: #3a3f4b;
+  --hl-add: rgba(152, 195, 121, 0.14); --hl-del: rgba(224, 108, 117, 0.14);
+  --hl-add-sign: #98c379; --hl-del-sign: #e06c75;
+  --hl-com: #7f848e; --hl-str: #98c379; --hl-num: #d19a66; --hl-kw: #c678dd;
+  --hl-type: #e5c07b; --hl-fn: #61afef; --hl-op: #56b6c2; --hl-punct: #abb2bf;
+}
+[data-syntax-theme="dracula"] {
+  --hl-bg: #282a36; --hl-fg: #f8f8f2; --hl-gutter: #6272a4; --hl-border: #3b3e52;
+  --hl-add: rgba(80, 250, 123, 0.13); --hl-del: rgba(255, 85, 85, 0.13);
+  --hl-add-sign: #50fa7b; --hl-del-sign: #ff5555;
+  --hl-com: #6272a4; --hl-str: #f1fa8c; --hl-num: #bd93f9; --hl-kw: #ff79c6;
+  --hl-type: #8be9fd; --hl-fn: #50fa7b; --hl-op: #ff79c6; --hl-punct: #f8f8f2;
+}
+[data-syntax-theme="github-light"] {
+  --hl-bg: #ffffff; --hl-fg: #1f2328; --hl-gutter: #8c959f; --hl-border: #d8dee4;
+  --hl-add: rgba(74, 194, 107, 0.16); --hl-del: rgba(255, 129, 130, 0.18);
+  --hl-add-sign: #1a7f37; --hl-del-sign: #cf222e;
+  --hl-com: #6e7781; --hl-str: #0a3069; --hl-num: #0550ae; --hl-kw: #cf222e;
+  --hl-type: #953800; --hl-fn: #8250df; --hl-op: #0550ae; --hl-punct: #1f2328;
+}
+
+.theme-preview { margin-top: 10px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.theme-preview .diff-table { font-size: 11.5px; }
+#syntax-theme { font: inherit; padding: 6px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
 .add-comment {
   display: none; position: absolute; right: -1px; top: 0;
   width: 16px; height: 16px; line-height: 13px; font-size: 12px; font-weight: 700;

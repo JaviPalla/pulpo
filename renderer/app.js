@@ -922,6 +922,9 @@ function diffLineRow(file, line, anchored) {
   const sign = line.type === "add" ? "+" : line.type === "del" ? "−" : " ";
   const commentLine = line.type === "del" ? line.old : line.new;
   const side = line.type === "del" ? "LEFT" : "RIGHT";
+  const codeHtml = window.pulpoHL
+    ? window.pulpoHL.highlightLine(line.text, window.pulpoHL.familyFromFilename(file.filename))
+    : esc(line.text);
   const threadsHtml = (anchored.get(`${file.filename}::${line.new}`) || [])
     .map(threadBlock)
     .map((html) => `<tr class="diff-thread-row"><td colspan="3">${html}</td></tr>`)
@@ -935,7 +938,7 @@ function diffLineRow(file, line, anchored) {
     <tr class="diff-line ${cls}" data-path="${esc(file.filename)}" data-line="${commentLine ?? ""}" data-side="${side}">
       <td class="gutter">${line.old ?? ""}</td>
       <td class="gutter">${line.new ?? ""}<button class="add-comment" title="Comentar esta línea (borrador)">+</button></td>
-      <td class="code"><span class="sign">${sign}</span>${esc(line.text)}</td>
+      <td class="code"><span class="sign">${sign}</span>${codeHtml}</td>
     </tr>${threadsHtml}${draftsHtml}`;
 }
 
@@ -1549,6 +1552,32 @@ function schedulePoll() {
 }
 
 /* ============ ajustes ============ */
+
+const THEMES = [
+  { id: "one-dark", label: "One Dark Pro" },
+  { id: "dracula", label: "Dracula" },
+  { id: "github-light", label: "GitHub Light" },
+];
+
+/** Filas de muestra (con add/del/ctx) para previsualizar el tema de sintaxis en Ajustes. */
+function themePreviewRows() {
+  const hl = (code, family) =>
+    window.pulpoHL ? window.pulpoHL.highlightLine(code, family) : esc(code);
+  const rows = [
+    { cls: "diff-ctx", sign: " ", fam: "c", code: `// Suma dos números y devuelve el total` },
+    { cls: "diff-del", sign: "−", fam: "c", code: `function add(a, b) { return a - b; }` },
+    { cls: "diff-add", sign: "+", fam: "c", code: `const add = (a, b) => a + b; // 42, "ok", true` },
+    { cls: "diff-ctx", sign: " ", fam: "c", code: `class Calc extends Base { value = 3.14; }` },
+    { cls: "diff-ctx", sign: " ", fam: "hash", code: `def total(items): return sum(items)  # Python` },
+  ];
+  return rows
+    .map(
+      (r) =>
+        `<tr class="diff-line ${r.cls}"><td class="code"><span class="sign">${r.sign}</span>${hl(r.code, r.fam)}</td></tr>`,
+    )
+    .join("");
+}
+
 function openSettings() {
   const root = $("#settings-root");
   root.classList.remove("hidden");
@@ -1597,6 +1626,18 @@ function openSettings() {
         <div class="add-repo">
           <input type="number" id="poll-seconds" min="15" value="${cfg.pollSeconds}" />
           <span class="muted" style="align-self:center">segundos</span>
+        </div>
+      </div>
+      <div class="settings-card">
+        <h4>Tema de sintaxis 🎨</h4>
+        <p class="muted">Colores del resaltado de código en la pantalla de Cambios.</p>
+        <div class="add-repo">
+          <select id="syntax-theme">
+            ${THEMES.map((t) => `<option value="${t.id}" ${(cfg.theme || "one-dark") === t.id ? "selected" : ""}>${esc(t.label)}</option>`).join("")}
+          </select>
+        </div>
+        <div class="theme-preview" data-syntax-theme="${esc(cfg.theme || "one-dark")}" id="theme-preview">
+          <table class="diff-table">${themePreviewRows()}</table>
         </div>
       </div>
       <div class="settings-card">
@@ -1651,6 +1692,13 @@ function openSettings() {
     state.config = await window.pulpo.setConfig({ token: $("#manual-token").value });
     toast("Token guardado", "ok");
     boot();
+  });
+  $("#syntax-theme").addEventListener("change", async (event) => {
+    const theme = event.target.value;
+    // Preview instantáneo antes de persistir.
+    $("#theme-preview").dataset.syntaxTheme = theme;
+    state.config = await window.pulpo.setConfig({ theme });
+    applyTheme(theme);
   });
 
   window.pulpo.aiStatus().then((s) => {
@@ -2122,8 +2170,14 @@ function renderRepoSelect() {
     .join("");
 }
 
+/** Aplica el tema de sintaxis al <body> (lo consume styles.css vía [data-syntax-theme]). */
+function applyTheme(theme) {
+  document.body.dataset.syntaxTheme = theme || "one-dark";
+}
+
 async function boot() {
   state.config = await window.pulpo.getConfig();
+  applyTheme(state.config.theme);
   // Instalación nueva (sin proveedor ni repos): primero elegimos GitHub o GitLab.
   // Los instalados de antes (con repos pero sin provider) siguen en GitHub por defecto.
   if (!state.config.provider && !state.config.repos.length) {

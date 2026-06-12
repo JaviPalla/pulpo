@@ -12,6 +12,8 @@ const DEFAULTS = {
   // Sin repos de fábrica: el onboarding ofrece los repos accesibles del usuario.
   repos: [],
   pollSeconds: 60,
+  // Tema de resaltado de sintaxis del diff (pantalla Cambios): "one-dark" | "dracula" | "github-light".
+  theme: "one-dark",
   lastRepo: null,
   lastBucket: null,
   // Token manual SOLO como último recurso; lo normal es el CLI (gh/glab) o la env var.

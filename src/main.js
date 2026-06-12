@@ -78,6 +78,7 @@ function wireIpc() {
     const repoRe = nextProvider === "gitlab" ? /^[\w.-]+(\/[\w.-]+)+$/ : /^[\w.-]+\/[\w.-]+$/;
     if (Array.isArray(partial.repos)) allowed.repos = partial.repos.filter((r) => repoRe.test(r));
     if (Number.isInteger(partial.pollSeconds) && partial.pollSeconds >= 15) allowed.pollSeconds = partial.pollSeconds;
+    if (["one-dark", "dracula", "github-light"].includes(partial.theme)) allowed.theme = partial.theme;
     if (partial.provider === "github" || partial.provider === "gitlab") {
       allowed.provider = partial.provider;
       // Cambiar de proveedor invalida el token: era de otro sitio.
