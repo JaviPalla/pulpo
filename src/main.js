@@ -184,6 +184,10 @@ function wireIpc() {
   ipcMain.handle("milestones:issues", async (_event, { title, includeClosed }) =>
     gh().milestoneIssues(title, { includeClosed: Boolean(includeClosed) }),
   );
+  ipcMain.handle("issues:groupLabels", async () => gh().groupLabels());
+  ipcMain.handle("issues:update", async (_event, { projectId, iid, patch }) =>
+    gh().updateIssue(projectId, iid, patch || {}),
+  );
 
   ipcMain.handle("shell:open", (_event, url) => {
     if (typeof url === "string" && /^https:\/\//.test(url)) shell.openExternal(url);

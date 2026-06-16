@@ -575,7 +575,8 @@ function mapMilestone(m) {
 }
 
 function mapAssignee(u) {
-  return { username: u.username, name: u.name || u.username, avatarUrl: u.avatar_url || null };
+  // id numérico necesario para assignee_ids al reasignar; el resto es para pintar.
+  return { id: u.id, username: u.username, name: u.name || u.username, avatarUrl: u.avatar_url || null };
 }
 
 // Con with_labels_details=true, `labels` llega como objetos {name,color,text_color}.
@@ -622,6 +623,29 @@ async function milestoneIssues(milestoneTitle, { includeClosed = false } = {}) {
   return issues.map(mapIssue);
 }
 
+// Labels del grupo, para poder asignar cualquiera (no solo las de estado configuradas).
+async function groupLabels() {
+  const group = milestonesGroup();
+  if (!group) throw new Error("No hay grupo configurado para milestones (revisa repos o config.milestones.group).");
+  const labels = await apiAll(`/groups/${encodeURIComponent(group)}/labels?with_counts=false`);
+  return labels.map((l) => ({ name: l.name, color: l.color, textColor: l.text_color }));
+}
+
+// Edita un issue (etiquetas / milestone / asignados). Los issues se leen del grupo
+// pero las mutaciones van por proyecto. NO es atómico entre varios issues: el llamador
+// (renderer) aplica en serie y reporta; un fallo a medias deja unos hechos y otros no.
+// patch: { addLabels?, removeLabels?, milestoneId?, assigneeIds? }.
+async function updateIssue(projectId, iid, patch) {
+  const body = {};
+  if (patch.addLabels?.length) body.add_labels = patch.addLabels.join(",");
+  if (patch.removeLabels?.length) body.remove_labels = patch.removeLabels.join(",");
+  // milestone_id: 0 desasigna el milestone; un id real lo asigna (los de grupo valen).
+  if ("milestoneId" in patch) body.milestone_id = patch.milestoneId == null ? 0 : patch.milestoneId;
+  if (patch.assigneeIds) body.assignee_ids = patch.assigneeIds.length ? patch.assigneeIds : [0];
+  const updated = await api("PUT", `/projects/${projectId}/issues/${iid}`, body);
+  return mapIssue(updated);
+}
+
 module.exports = {
   resolveToken,
   invalidateTokenCache,
@@ -648,4 +672,6 @@ module.exports = {
   prNodeId,
   listMilestones,
   milestoneIssues,
+  groupLabels,
+  updateIssue,
 };

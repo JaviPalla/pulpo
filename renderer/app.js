@@ -28,7 +28,7 @@ const state = {
   history: { branches: [], enabled: new Set(), layout: null, rows: [], loading: false, selectedOid: null },
   // Vista de Milestones (solo GitLab): tareas (issues) del milestone agrupadas por persona.
   // filters.status: Map<label, "include"|"exclude"> (chip tri-estado); se siembra con doneLabels en "exclude".
-  milestones: { list: [], selectedTitle: null, issues: [], loading: false, filters: { status: new Map(), showClosed: false, seeded: false } },
+  milestones: { list: [], selectedTitle: null, issues: [], loading: false, labels: [], selected: new Set(), filters: { status: new Map(), showClosed: false, showUnassigned: false, seeded: false } },
   prSnapshot: null, // nº → {reviewDecision, checks, reviewMe} para detectar cambios y notificar
   cursor: -1, // selección con teclado (j/k) en la lista
   draftKeys: new Set(), // "owner/repo#n" con borradores guardados → badge 📝 en la lista
@@ -2104,10 +2104,13 @@ async function loadMilestones() {
   renderMilestones();
   try {
     if (!m.list.length) m.list = await window.pulpo.listMilestones();
+    if (!m.labels.length) m.labels = await window.pulpo.groupLabels().catch(() => []);
     if (!m.selectedTitle && m.list.length) m.selectedTitle = pickCurrentMilestone(m.list);
-    // Solo traemos cerradas si el usuario las pide: en grupos activos son miles y
-    // no deben desplazar a las abiertas dentro del límite de paginación.
-    m.issues = m.selectedTitle ? await window.pulpo.milestoneIssues(m.selectedTitle, m.filters.showClosed) : [];
+    // Traemos SIEMPRE todo (incl. cerradas): las métricas To do / pending check se calculan
+    // contra las cerradas/terminadas, así que las necesitamos aunque no se muestren. El filtro
+    // "Mostrar cerradas" pasa a ser solo de visualización. Limitado por milestone, no es el grupo
+    // entero. ponytail: si un milestone supera el cap de 500 (apiAll), las métricas se quedan cortas.
+    m.issues = m.selectedTitle ? await window.pulpo.milestoneIssues(m.selectedTitle, true) : [];
     m.loading = false;
     renderMilestones();
   } catch (err) {
@@ -2151,6 +2154,11 @@ function groupIssuesByAssignee(issues) {
   });
 }
 
+// Clave estable de un issue (los issues se leen del grupo, así que combinamos proyecto+iid).
+function issueKey(iss) {
+  return `${iss.projectId}#${iss.iid}`;
+}
+
 function milestoneCard(iss, statusSet) {
   const chips = iss.labels
     .map((l) => {
@@ -2159,65 +2167,98 @@ function milestoneCard(iss, statusSet) {
       return `<span class="ms-label ${isStatus ? "status" : ""}" ${style}>${esc(l.name)}</span>`;
     })
     .join("");
+  const key = issueKey(iss);
+  const selected = state.milestones.selected.has(key);
   return `
-    <div class="ms-task ${iss.state === "closed" ? "closed" : ""}">
-      <button class="ms-task-title" data-url="${esc(iss.webUrl)}" title="Abrir en GitLab">
-        ${esc(iss.title)} <span class="ms-iid">#${iss.iid}</span>
-      </button>
+    <div class="ms-task ${iss.state === "closed" ? "closed" : ""} ${selected ? "selected" : ""}" draggable="true"
+         data-key="${esc(key)}" data-project="${iss.projectId}" data-iid="${iss.iid}">
+      <div class="ms-task-top">
+        <input type="checkbox" class="ms-task-check" ${selected ? "checked" : ""} title="Seleccionar" />
+        <button class="ms-task-title" data-url="${esc(iss.webUrl)}" title="Abrir en GitLab">
+          ${esc(iss.title)} <span class="ms-iid">#${iss.iid}</span>
+        </button>
+      </div>
       ${chips ? `<div class="ms-task-labels">${chips}</div>` : ""}
     </div>`;
 }
 
-// Métricas sobre un conjunto de issues ABIERTOS (independientes de los filtros de la vista):
-//  - "sin programar": abierto sin ninguna etiqueta de estado (no se ha planificado todavía).
-//  - "en comprobar": terminada pero no cerrada (lleva alguna doneLabel).
-function milestoneMetrics(openIssues, statusSet, doneSet) {
-  const total = openIssues.length;
-  let unscheduled = 0;
-  let checking = 0;
-  for (const iss of openIssues) {
+// Las "pending check*" (comprobación) y "finished" (terminada) viven ambas en doneLabels;
+// las separamos por nombre: las que contienen "pending check" son comprobación, el resto (finished) terminada.
+function splitDoneLabels(doneLabels) {
+  const pendingCheck = new Set();
+  const finished = new Set();
+  for (const l of doneLabels) (l.toLowerCase().includes("pending check") ? pendingCheck : finished).add(l);
+  return { pendingCheck, finished };
+}
+
+// Métricas sobre un conjunto de issues (todas las que se le pasen; el llamador filtra a las
+// ASIGNADAS). Categorías mutuamente excluyentes:
+//   C = cerradas · F = abiertas con "finished" · P = abiertas con "pending check*" · T = abiertas resto (to do)
+// Indicadores de AVANCE (cuánto se ha completado, no cuánto falta), base "hecho" = C + F:
+//   Terminadas  = base / (base + T)   cerradas/finished sobre el total a hacer
+//   Comprobadas = base / (base + P)   ya comprobadas sobre comprobadas + las que esperan comprobación
+function milestoneMetrics(issues, pendingCheckSet, finishedSet) {
+  let C = 0, F = 0, P = 0, T = 0;
+  for (const iss of issues) {
+    if (iss.state === "closed") { C++; continue; }
     const names = iss.labels.map((l) => l.name);
-    if (!names.some((n) => statusSet.has(n))) unscheduled++;
-    if (names.some((n) => doneSet.has(n))) checking++;
+    if (names.some((n) => finishedSet.has(n))) F++;
+    else if (names.some((n) => pendingCheckSet.has(n))) P++;
+    else T++;
   }
-  const pct = (x) => (total ? Math.round((100 * x) / total) : 0);
-  return { total, unscheduled, checking, unschedPct: pct(unscheduled), checkPct: pct(checking) };
+  const base = C + F;
+  const pct = (count, total) => (total ? Math.round((100 * count) / total) : 0);
+  return {
+    doneCount: base, doneTotal: base + T, donePct: pct(base, base + T),
+    checkedCount: base, checkedTotal: base + P, checkedPct: pct(base, base + P),
+  };
 }
 
-// Indicador de progreso: etiqueta arriba, barra horizontal con el % y el número al final.
-function metricBar(pct, count, total, label, colorVar, hint, cls) {
-  return `
-    <div class="ms-metric ${cls}" title="${esc(hint)}">
-      <span class="ms-metric-label">${label}</span>
-      <div class="ms-bar-row">
-        <span class="ms-bar"><span class="ms-bar-fill" style="width:${pct}%;background:var(${colorVar})"></span></span>
-        <span class="ms-metric-val">${pct}% <span class="muted">${count}/${total}</span></span>
+// Info del filtro de estado: explica los tres estados (sin filtro → solo estas → ocultas) con
+// una animación que va resaltando cada uno en orden, mostrando el ciclo del clic.
+function statusFilterHelp() {
+  return `<span class="ms-filter-info" tabindex="0" title="Cómo funciona el filtro de etiquetas"><span class="ms-filter-i">i</span><div class="ms-filter-pop">
+      <div class="msfh-title">Clic en una etiqueta para ciclar el filtro:</div>
+      <div class="msfh-states">
+        <span class="msfh-state st1">
+          <span class="msfh-chip neutral"><span class="lbl">etiqueta</span></span>
+          <span class="msfh-cap">Sin filtro</span>
+        </span>
+        <span class="msfh-arr">→</span>
+        <span class="msfh-state st2">
+          <span class="msfh-chip inc"><span class="chk">✓</span> <span class="lbl">etiqueta</span></span>
+          <span class="msfh-cap">Solo estas</span>
+        </span>
+        <span class="msfh-arr">→</span>
+        <span class="msfh-state st3">
+          <span class="msfh-chip exc"><span class="ex">✕</span> <span class="lbl">etiqueta</span></span>
+          <span class="msfh-cap">Ocultas</span>
+        </span>
       </div>
-    </div>`;
+    </div></span>`;
 }
 
-function metricsBadges(mm, cls) {
+// Negro o blanco según la luminancia del color de fondo, para que el texto SIEMPRE se lea
+// encima del color del label (sea cual sea). Fórmula perceptual (rec. 601).
+function readableText(hex) {
+  const h = (hex || "").replace("#", "");
+  if (h.length < 6) return "#fff";
+  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.6 ? "#1a1a1a" : "#fff";
+}
+
+// Indicadores Terminadas/Comprobadas como pastillas. En la cabecera del milestone se muestra
+// también el número (showCount); en la de cada persona solo el % (n/m en el tooltip).
+function metricChips(mm, showCount = false) {
+  const chip = (cls, icon, count, total, pct, name) => {
+    const num = showCount ? `<span class="ms-chip-n">${count}/${total}</span> ` : "";
+    return `<span class="ms-chip ${cls}" title="${name} ${count}/${total}">${icon} ${num}${pct}%</span>`;
+  };
   return (
-    metricBar(mm.unschedPct, mm.unscheduled, mm.total, "To do", "--yellow", "Abiertas sin etiqueta de estado: aún sin planificar", cls) +
-    metricBar(mm.checkPct, mm.checking, mm.total, "pending check", "--green", "Terminadas pero no cerradas: en fase de comprobación", cls)
+    chip("term", "✓", mm.doneCount, mm.doneTotal, mm.donePct, "Terminadas") +
+    chip("check", "◉", mm.checkedCount, mm.checkedTotal, mm.checkedPct, "Comprobadas")
   );
-}
-
-// Fecha de cierre del milestone + cuántos días faltan (o si ya venció).
-function milestoneDueInfo(selectedMs) {
-  if (!selectedMs?.dueDate) return "";
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const due = new Date(`${selectedMs.dueDate}T00:00:00`);
-  const days = Math.round((due - today) / 86400000);
-  const [y, mo, d] = selectedMs.dueDate.split("-");
-  const dateStr = `${d}/${mo}/${y}`;
-  const rel =
-    days > 0 ? `faltan ${days} día${days === 1 ? "" : "s"}`
-    : days === 0 ? "vence hoy"
-    : `vencido hace ${-days} día${-days === 1 ? "" : "s"}`;
-  const cls = days < 0 ? "overdue" : days <= 3 ? "soon" : "";
-  return `<span class="ms-due ${cls}">Cierre: <b>${dateStr}</b> · ${rel}</span>`;
 }
 
 function renderMilestones() {
@@ -2230,7 +2271,7 @@ function renderMilestones() {
 
   const statusLabels = state.config?.milestones?.statusLabels || [];
   const statusSet = new Set(statusLabels);
-  const doneSet = new Set(state.config?.milestones?.doneLabels || []);
+  const { pendingCheck: pendingCheckSet, finished: finishedSet } = splitDoneLabels(state.config?.milestones?.doneLabels || []);
   const search = state.search.trim().toLowerCase();
 
   // Filtros tri-estado: incluir (solo estas) y excluir (ocultar estas).
@@ -2243,6 +2284,7 @@ function renderMilestones() {
 
   const visible = m.issues.filter((iss) => {
     if (!m.filters.showClosed && iss.state === "closed") return false;
+    if (!m.filters.showUnassigned && !iss.assignees.length) return false;
     const names = iss.labels.map((l) => l.name);
     if (excludes.size && names.some((n) => excludes.has(n))) return false;
     if (includes.length && !names.some((n) => includes.includes(n))) return false;
@@ -2250,22 +2292,30 @@ function renderMilestones() {
     return true;
   });
 
-  // Las métricas se calculan SIEMPRE sobre las abiertas completas, no sobre lo filtrado:
-  // ocultar "en comprobar" no debe poner ese % a cero.
-  const openIssues = m.issues.filter((iss) => iss.state === "opened");
-  const openByMember = new Map(groupIssuesByAssignee(openIssues).map((g) => [g.username, g.issues]));
-  const milestoneMM = milestoneMetrics(openIssues, statusSet, doneSet);
-  const selectedMs = m.list.find((ms) => ms.title === m.selectedTitle);
+  // Las métricas se calculan SIEMPRE sobre el conjunto completo de ASIGNADAS (no sobre lo
+  // filtrado ni sobre las sin asignar): ocultar un estado no debe poner su % a cero.
+  const assignedIssues = m.issues.filter((iss) => iss.assignees.length);
+  const allByMember = new Map(groupIssuesByAssignee(m.issues).map((g) => [g.username, g.issues]));
+  const milestoneMM = milestoneMetrics(assignedIssues, pendingCheckSet, finishedSet);
 
-  const msOptions = m.list
-    .map((ms) => `<option value="${esc(ms.title)}" ${ms.title === m.selectedTitle ? "selected" : ""}>${esc(ms.title)}${ms.dueDate ? ` · vence ${esc(ms.dueDate)}` : ""}</option>`)
-    .join("");
+  // Chips de estado con el color real del label: neutro = solo borde; incluir = relleno + ✓ verde;
+  // excluir = sin relleno, ✕ roja y texto tachado.
+  const labelColors = new Map(m.labels.map((l) => [l.name, l]));
   const statusChips = statusLabels
     .map((label) => {
       const mode = m.filters.status.get(label);
+      const lab = labelColors.get(label);
+      const color = lab?.color || "var(--text-muted)";
       const cls = mode === "include" ? "on" : mode === "exclude" ? "off" : "";
+      // Relleno: texto en blanco/negro según contraste con el color. Sin relleno: texto en --text
+      // (siempre legible sobre el fondo del tema), el color queda en el borde.
+      const style =
+        mode === "include"
+          ? `background:${color};color:${readableText(lab?.color)};border-color:${color}`
+          : `background:transparent;color:var(--text);border-color:${color}`;
+      const icon = mode === "include" ? `<span class="chk">✓</span> ` : mode === "exclude" ? `<span class="ex">✕</span> ` : "";
       const hint = mode === "include" ? "Solo estas · clic: ocultar" : mode === "exclude" ? "Ocultas · clic: quitar filtro" : "Clic: solo estas";
-      return `<button class="ms-status-chip ${cls}" data-label="${esc(label)}" title="${hint}">${esc(label)}</button>`;
+      return `<button class="ms-status-chip ${cls}" data-label="${esc(label)}" style="${style}" title="${hint}">${icon}<span class="lbl">${esc(label)}</span></button>`;
     })
     .join("");
 
@@ -2273,46 +2323,77 @@ function renderMilestones() {
   const boardHtml = groups.length
     ? groups
         .map((g) => {
-          const gm = milestoneMetrics(openByMember.get(g.username) || [], statusSet, doneSet);
+          const gm = milestoneMetrics(allByMember.get(g.username) || [], pendingCheckSet, finishedSet);
           return `
-        <section class="ms-group">
+        <section class="ms-group ms-drop" data-username="${esc(g.username)}" data-userid="${g.id || ""}">
           <header class="ms-group-head">
             ${g.avatarUrl ? `<img class="ms-avatar" src="${esc(g.avatarUrl)}" alt="" />` : `<span class="ms-avatar ph">∅</span>`}
             <span class="ms-group-name">${esc(g.name)}</span>
+            <span class="ms-group-chips">${metricChips(gm)}</span>
             <span class="ms-group-count">${g.issues.length}</span>
           </header>
-          <div class="ms-group-metrics">${metricsBadges(gm, "mini")}</div>
           <div class="ms-tasks">${g.issues.map((iss) => milestoneCard(iss, statusSet)).join("")}</div>
         </section>`;
         })
         .join("")
     : `<div class="empty">No hay tareas que mostrar con estos filtros.</div>`;
 
+  // Solo seguimos contando como seleccionadas las que siguen visibles.
+  const visibleKeys = new Set(visible.map(issueKey));
+  for (const k of [...m.selected]) if (!visibleKeys.has(k)) m.selected.delete(k);
+  const selCount = m.selected.size;
+
+  const railHtml = m.list
+    .map((ms) => {
+      const current = ms.title === m.selectedTitle;
+      // Los chips de métricas (genéricos del milestone) van bajo el nombre, solo en el actual.
+      const metrics = current ? `<span class="ms-rail-metrics">${metricChips(milestoneMM, true)}</span>` : "";
+      const due = ms.dueDate ? `<span class="ms-rail-due">vence ${esc(ms.dueDate)}</span>` : "";
+      return `<button class="ms-rail-item ms-drop-ms ${current ? "current" : ""}" data-msid="${ms.id}" data-title="${esc(ms.title)}" title="Clic: ver este milestone · soltar issues aquí para moverlas">
+        <span class="ms-rail-name">${esc(ms.title)}</span>
+        ${metrics || due ? `<span class="ms-rail-sub">${metrics}${due}</span>` : ""}
+      </button>`;
+    })
+    .join("");
+
   list.innerHTML = `
-    <div class="ms-toolbar">
-      <select id="ms-select" class="ms-select" title="Milestone">${msOptions || `<option>Sin milestones activos</option>`}</select>
-      <label class="ms-closed-toggle"><input type="checkbox" id="ms-show-closed" ${m.filters.showClosed ? "checked" : ""} /> Mostrar cerradas</label>
-      <span class="ms-counter">${visible.length} tarea${visible.length === 1 ? "" : "s"}</span>
-      <button class="icon-btn" id="ms-refresh" title="Recargar">⟳</button>
+    <div class="ms-rail">${railHtml || `<span class="muted">Sin milestones activos</span>`}</div>
+    <div class="ms-filters">
+      ${statusFilterHelp()}
+      ${statusChips ? `<div class="ms-status-bar">${statusChips}</div>` : ""}
+      <div class="ms-toggles">
+        <label class="ms-closed-toggle"><input type="checkbox" id="ms-show-closed" ${m.filters.showClosed ? "checked" : ""} /> Mostrar cerradas</label>
+        <label class="ms-closed-toggle"><input type="checkbox" id="ms-show-unassigned" ${m.filters.showUnassigned ? "checked" : ""} /> Mostrar sin asignar</label>
+        <span class="ms-counter">${visible.length} tarea${visible.length === 1 ? "" : "s"}</span>
+        <button class="icon-btn" id="ms-refresh" title="Recargar">⟳</button>
+      </div>
     </div>
-    <div class="ms-summary">
-      ${metricsBadges(milestoneMM, "")}
-      ${milestoneDueInfo(selectedMs)}
-      <span class="muted ms-summary-total">${milestoneMM.total} abiertas</span>
+    <div class="ms-bulk-bar ${selCount ? "" : "hidden"}">
+      <span class="ms-bulk-count">${selCount} seleccionada${selCount === 1 ? "" : "s"}</span>
+      <button class="btn" id="ms-bulk-labels">Etiquetas…</button>
+      <button class="btn" id="ms-bulk-milestone">Milestone…</button>
+      <button class="btn ghost" id="ms-bulk-clear">Quitar selección</button>
     </div>
-    ${statusChips ? `<div class="ms-status-bar"><span class="ms-status-hint">Estado:</span>${statusChips}</div>` : ""}
     <div class="ms-board">${boardHtml}</div>`;
 
-  $("#ms-select")?.addEventListener("change", (event) => {
-    m.selectedTitle = event.target.value;
-    m.issues = [];
-    loadMilestones();
-  });
+  // Clic en una tarjeta del rail = ver ese milestone (además de ser drop target para mover issues).
+  list.querySelectorAll(".ms-drop-ms").forEach((item) =>
+    item.addEventListener("click", () => {
+      if (item.dataset.title === m.selectedTitle) return;
+      m.selectedTitle = item.dataset.title;
+      m.issues = [];
+      m.selected.clear();
+      loadMilestones();
+    }),
+  );
   $("#ms-show-closed")?.addEventListener("change", (event) => {
+    // Las cerradas ya están en m.issues (se traen siempre para las métricas): solo es display.
     m.filters.showClosed = event.target.checked;
-    // El alcance abiertas/todas se decide en el fetch, así que recargamos.
-    m.issues = [];
-    loadMilestones();
+    renderMilestones();
+  });
+  $("#ms-show-unassigned")?.addEventListener("change", (event) => {
+    m.filters.showUnassigned = event.target.checked;
+    renderMilestones();
   });
   $("#ms-refresh")?.addEventListener("click", () => {
     m.list = [];
@@ -2331,9 +2412,221 @@ function renderMilestones() {
     }),
   );
   list.querySelectorAll(".ms-task-title").forEach((btn) =>
-    btn.addEventListener("click", () => window.pulpo.openExternal(btn.dataset.url)),
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation(); // no seleccionar la tarjeta al abrir en GitLab
+      window.pulpo.openExternal(btn.dataset.url);
+    }),
   );
+
+  // Selección múltiple: checkbox por issue.
+  list.querySelectorAll(".ms-task-check").forEach((box) =>
+    box.addEventListener("change", (event) => {
+      const key = event.target.closest(".ms-task").dataset.key;
+      if (event.target.checked) m.selected.add(key);
+      else m.selected.delete(key);
+      renderMilestones();
+    }),
+  );
+
+  wireMilestoneDragDrop(list);
+
+  $("#ms-bulk-clear")?.addEventListener("click", () => {
+    m.selected.clear();
+    renderMilestones();
+  });
+  $("#ms-bulk-labels")?.addEventListener("click", openBulkLabelsModal);
+  $("#ms-bulk-milestone")?.addEventListener("click", openBulkMilestoneModal);
+
   notifySelftestOnce();
+}
+
+// Aplica un patch (objeto, o función issue→patch) a un conjunto de issues por su clave.
+// Secuencial y NO atómico: si falla a medias, unas quedan aplicadas y otras no (se reporta).
+async function applyIssuePatch(keys, patchOrFn) {
+  const m = state.milestones;
+  let ok = 0;
+  let fail = 0;
+  for (const key of keys) {
+    const iss = m.issues.find((i) => issueKey(i) === key);
+    if (!iss) continue;
+    const patch = typeof patchOrFn === "function" ? patchOrFn(iss) : patchOrFn;
+    if (!patch) continue;
+    try {
+      await window.pulpo.updateIssue(iss.projectId, iss.iid, patch);
+      ok++;
+    } catch {
+      fail++;
+    }
+  }
+  m.selected.clear();
+  m.issues = []; // fuerza refetch de las tareas del milestone actual
+  await loadMilestones();
+  if (fail) toast(`${ok} aplicada${ok === 1 ? "" : "s"}, ${fail} fallaron`, "err");
+  else if (ok) toast(`${ok} tarea${ok === 1 ? "" : "s"} actualizada${ok === 1 ? "" : "s"}`, "ok");
+}
+
+function wireMilestoneDragDrop(list) {
+  list.querySelectorAll(".ms-task").forEach((card) =>
+    card.addEventListener("dragstart", (event) => {
+      const key = card.dataset.key;
+      const sel = state.milestones.selected;
+      // Si arrastras una seleccionada, mueve toda la selección; si no, solo esa.
+      const keys = sel.has(key) ? [...sel] : [key];
+      const fromUserId = card.closest(".ms-drop")?.dataset.userid || "";
+      event.dataTransfer.setData("text/plain", JSON.stringify({ keys, fromUserId }));
+      event.dataTransfer.effectAllowed = "move";
+    }),
+  );
+
+  const readPayload = (event) => {
+    try {
+      return JSON.parse(event.dataTransfer.getData("text/plain"));
+    } catch {
+      return null;
+    }
+  };
+
+  // Drop sobre una persona: reasignar (quita al de origen, añade al destino, conserva el resto).
+  list.querySelectorAll(".ms-drop").forEach((col) => {
+    col.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      col.classList.add("drag-over");
+    });
+    col.addEventListener("dragleave", () => col.classList.remove("drag-over"));
+    col.addEventListener("drop", (event) => {
+      event.preventDefault();
+      col.classList.remove("drag-over");
+      const payload = readPayload(event);
+      if (!payload) return;
+      const fromId = Number(payload.fromUserId) || null;
+      const targetId = col.dataset.userid ? Number(col.dataset.userid) : null;
+      if (fromId && fromId === targetId) return; // misma columna, nada que hacer
+      applyIssuePatch(payload.keys, (iss) => {
+        let ids = iss.assignees.map((a) => a.id);
+        if (fromId) ids = ids.filter((id) => id !== fromId);
+        if (targetId && !ids.includes(targetId)) ids.push(targetId);
+        return { assigneeIds: ids };
+      });
+    });
+  });
+
+  // Drop sobre un milestone del rail: mover el issue a ese milestone.
+  list.querySelectorAll(".ms-drop-ms").forEach((item) => {
+    item.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      item.classList.add("drag-over");
+    });
+    item.addEventListener("dragleave", () => item.classList.remove("drag-over"));
+    item.addEventListener("drop", (event) => {
+      event.preventDefault();
+      item.classList.remove("drag-over");
+      const payload = readPayload(event);
+      if (!payload) return;
+      applyIssuePatch(payload.keys, { milestoneId: Number(item.dataset.msid) });
+    });
+  });
+}
+
+// Modal de etiquetas en bloque: chips tri-estado (neutro → añadir → quitar → neutro).
+function openBulkLabelsModal() {
+  const m = state.milestones;
+  const keys = [...m.selected];
+  if (!keys.length) return;
+  const selectedIssues = m.issues.filter((i) => m.selected.has(issueKey(i)));
+  // Estado inicial = labels que TODAS las seleccionadas ya tienen (badge relleno de partida).
+  // Marcar = el label estará presente en todas; desmarcar = se quitará de todas.
+  const initial = new Set(m.labels.filter((l) => selectedIssues.every((i) => i.labels.some((x) => x.name === l.name))).map((l) => l.name));
+  const chosen = new Set(initial);
+  const root = $("#modal-root");
+
+  // Badge con el color real del label: relleno si está marcado, solo borde si no.
+  const badge = (l) => {
+    const on = chosen.has(l.name);
+    const c = l.color || "var(--accent)";
+    const style = on
+      ? `background:${c};color:${l.textColor || "#fff"};border:1px solid ${c}`
+      : `background:transparent;color:${c};border:1px solid ${c}`;
+    return `<button class="ms-label-pick" data-name="${esc(l.name)}" style="${style}">${esc(l.name)}</button>`;
+  };
+  const renderChips = (filter = "") => {
+    const f = filter.trim().toLowerCase();
+    return m.labels.filter((l) => !f || l.name.toLowerCase().includes(f)).map(badge).join("");
+  };
+
+  root.innerHTML = `
+    <div class="modal-backdrop" id="modal-backdrop">
+      <div class="modal modal-wide">
+        <h3>Etiquetas · ${keys.length} seleccionada${keys.length === 1 ? "" : "s"}</h3>
+        <p class="muted">Las rellenas se aplicarán a todas; las que quites se eliminarán de todas.</p>
+        <input type="text" class="modal-input" id="ms-label-search" placeholder="Buscar etiqueta…" />
+        <div class="ms-label-pick-list" id="ms-label-list">${renderChips()}</div>
+        <div class="modal-actions">
+          <button class="btn" id="modal-cancel">Cancelar</button>
+          <button class="btn btn-primary" id="modal-apply">Aplicar</button>
+        </div>
+      </div>
+    </div>`;
+
+  const close = () => (root.innerHTML = "");
+  $("#modal-backdrop").addEventListener("click", (event) => {
+    if (event.target.id === "modal-backdrop") close();
+  });
+  $("#modal-cancel").addEventListener("click", close);
+  $("#ms-label-search").addEventListener("input", (event) => {
+    $("#ms-label-list").innerHTML = renderChips(event.target.value);
+    wireRows();
+  });
+  const wireRows = () =>
+    root.querySelectorAll(".ms-label-pick").forEach((row) =>
+      row.addEventListener("click", () => {
+        const name = row.dataset.name;
+        if (chosen.has(name)) chosen.delete(name);
+        else chosen.add(name);
+        $("#ms-label-list").innerHTML = renderChips($("#ms-label-search").value);
+        wireRows();
+      }),
+    );
+  wireRows();
+  $("#modal-apply").addEventListener("click", () => {
+    const addLabels = [...chosen].filter((n) => !initial.has(n));
+    const removeLabels = [...initial].filter((n) => !chosen.has(n));
+    close();
+    if (addLabels.length || removeLabels.length) applyIssuePatch(keys, { addLabels, removeLabels });
+  });
+}
+
+// Modal para mover las seleccionadas a otro milestone (o quitarlo).
+function openBulkMilestoneModal() {
+  const m = state.milestones;
+  const keys = [...m.selected];
+  if (!keys.length) return;
+  const root = $("#modal-root");
+  const items = m.list
+    .map((ms) => `<button class="ms-label-row" data-msid="${ms.id}"><span>${esc(ms.title)}</span>${ms.dueDate ? `<span class="muted">${esc(ms.dueDate)}</span>` : ""}</button>`)
+    .join("");
+  root.innerHTML = `
+    <div class="modal-backdrop" id="modal-backdrop">
+      <div class="modal">
+        <h3>Mover a milestone · ${keys.length} seleccionada${keys.length === 1 ? "" : "s"}</h3>
+        <div class="ms-label-list">
+          ${items}
+          <button class="ms-label-row off" data-msid="0"><span>Sin milestone</span></button>
+        </div>
+        <div class="modal-actions"><button class="btn" id="modal-cancel">Cancelar</button></div>
+      </div>
+    </div>`;
+  const close = () => (root.innerHTML = "");
+  $("#modal-backdrop").addEventListener("click", (event) => {
+    if (event.target.id === "modal-backdrop") close();
+  });
+  $("#modal-cancel").addEventListener("click", close);
+  root.querySelectorAll(".ms-label-row").forEach((row) =>
+    row.addEventListener("click", () => {
+      const msid = Number(row.dataset.msid);
+      close();
+      applyIssuePatch(keys, { milestoneId: msid || null });
+    }),
+  );
 }
 
 /* ============ arranque ============ */
