@@ -67,25 +67,17 @@ body {
 }
 #topbar > * { -webkit-app-region: no-drag; }
 .traffic-pad { width: 78px; -webkit-app-region: drag; }
-.brand { font-size: 14px; letter-spacing: -0.1px; -webkit-app-region: drag; }
-#repo-select {
-  appearance: none;
-  font: inherit;
-  color: var(--text);
-  background: var(--gray-bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 26px 6px 10px;
-  max-width: 260px;
-}
+.brand { font-size: 18px; line-height: 1; -webkit-app-region: drag; }
 #search {
-  flex: 1;
+  margin-left: auto;
+  width: 180px;
   font: inherit;
+  font-size: 12px;
   color: var(--text);
   background: var(--gray-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 6px 12px;
+  padding: 5px 10px;
   outline: none;
 }
 #search:focus { border-color: var(--accent); }
@@ -115,7 +107,22 @@ body {
   border-right: 1px solid var(--border);
   background: var(--bg);
 }
+#sidebar > #repo-select {
+  appearance: none;
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--gray-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 26px 7px 10px;
+  margin-bottom: 4px;
+  cursor: pointer;
+}
 .nav-section {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -123,6 +130,7 @@ body {
   color: var(--text-muted);
   padding: 10px 10px 4px;
 }
+.nav-section .ico { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.85; }
 .bucket {
   display: flex;
   align-items: center;
@@ -141,13 +149,15 @@ body {
 .bucket:hover { background: var(--bg-hover); }
 .bucket.active { background: var(--branch-bg); color: var(--branch-text); }
 .bucket .count { margin-left: auto; font-size: 11px; color: var(--text-muted); }
-.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.dot-open { background: var(--green); }
-.dot-mine { background: var(--accent); }
-.dot-review { background: var(--yellow); }
-.dot-draft { background: var(--text-muted); }
-.dot-merged { background: var(--purple); }
-.dot-closed { background: var(--red); }
+.bucket .ico { width: 16px; height: 16px; flex-shrink: 0; }
+.ico-open { color: var(--green); }
+.ico-mine { color: var(--accent); }
+.ico-review { color: var(--yellow); }
+.ico-draft { color: var(--text-muted); }
+.ico-merged { color: var(--purple); }
+.ico-closed { color: var(--red); }
+.ico-graph { color: var(--accent); }
+.ico-milestone { color: var(--green); }
 .sidebar-foot {
   margin-top: auto;
   padding: 10px;
@@ -546,7 +556,6 @@ body {
 .orphan-threads { padding: 4px 14px 10px; }
 
 /* ---------- histórico ---------- */
-.dot-graph { background: linear-gradient(135deg, var(--accent), var(--purple)); }
 .history-toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 .branch-chips { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
 .branch-chip {
@@ -583,7 +592,6 @@ body {
 }
 
 /* ---------- milestones (tareas por persona) ---------- */
-.dot-milestone { background: linear-gradient(135deg, var(--green), var(--accent)); }
 .ms-closed-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); cursor: pointer; }
 /* Checkboxes custom redondos (toggles de filtros + selección por issue): aspecto coherente
    con la app, acento al marcar y una animación sutil del tick al aparecer. */
