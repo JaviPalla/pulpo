@@ -604,8 +604,10 @@ function mapIssue(issue) {
   );
   const description = issue.description || "";
   return {
+    id: issue.id, // id global (= WorkItem id en GraphQL), para resolver la jerarquía padre
     iid: issue.iid,
     projectId: issue.project_id,
+    issueType: issue.issue_type, // "issue" | "task" (work item) | ...
     // references.full = "group/project#iid"; nos quedamos con el path del proyecto.
     projectPath: (issue.references?.full || "").replace(/#\d+$/, ""),
     title: issue.title,
@@ -664,53 +666,106 @@ async function updateIssue(projectId, iid, patch) {
   return mapIssue(updated);
 }
 
-// Las Epics viven como issues en el proyecto "Epics" del grupo, y las issues normales se
-// enlazan a ellas vía "issues relacionadas" (linked items). Detectamos la Epic por el último
-// segmento del path del proyecto enlazado.
+// Las Epics viven como issues en el proyecto "epics" del grupo: las detectamos por el último
+// segmento del path del proyecto en su URL.
 // ponytail: nombre de proyecto "epics" hardcodeado; si vuestra instancia lo llama distinto,
 // parametrizar en config.milestones.epicsProject.
-function isEpicRef(refFull, webUrl) {
-  const path = refFull ? refFull.replace(/#\d+$/, "") : (webUrl || "").replace(/\/-\/issues\/\d+.*$/, "");
+function isEpicUrl(webUrl) {
+  const path = (webUrl || "").replace(/\/-\/(issues|work_items)\/\d+.*$/, "");
   return path.split("/").pop()?.toLowerCase() === "epics";
 }
 
-async function issueEpic(issue) {
-  try {
-    const links = await api("GET", `/projects/${issue.projectId}/issues/${issue.iid}/links`);
-    const epic = (Array.isArray(links) ? links : []).find((l) => isEpicRef(l.references?.full, l.web_url));
-    return epic ? { id: `${epic.project_id}#${epic.iid}`, title: epic.title, url: epic.web_url } : null;
-  } catch {
-    return null; // sin permiso de links / epics deshabilitado: la tratamos como suelta
-  }
+// Consulta GraphQL contra /api/graphql (REST no expone la jerarquía padre de work items).
+async function graphql(query, variables) {
+  const { token } = resolveToken();
+  if (!token) throw new Error("NO_TOKEN");
+  const { base } = settings();
+  const res = await fetch(`${base}/api/graphql`, {
+    method: "POST",
+    headers: { "PRIVATE-TOKEN": token, "User-Agent": "pulpo-app", "Content-Type": "application/json" },
+    body: JSON.stringify({ query, variables }),
+  });
+  const json = await res.json();
+  if (!res.ok || json.errors) throw new Error(json.errors?.[0]?.message || `GraphQL HTTP ${res.status}`);
+  return json.data;
 }
 
-// Colapsa epics: las issues que pertenecen a una misma Epic se sustituyen por un único item
-// Epic (con los títulos de sus hijas como contexto); el resto quedan como item suelto. Solo
-// GitLab (github tiene stub de paridad). ponytail: N+1 (un GET /links por issue) en paralelo,
-// aceptable para un milestone; si crece mucho, trocear el Promise.all.
+// Padre (jerarquía de work items) de varios work items en UNA sola query con alias. Devuelve
+// Map<gid, parent|null> donde parent = {id, title, webUrl, workItemType:{name}}.
+async function workItemParents(gids) {
+  if (!gids.length) return new Map();
+  const fields = gids
+    .map((gid, i) => `a${i}: workItem(id:${JSON.stringify(gid)}){ widgets{ ... on WorkItemWidgetHierarchy { parent { id title webUrl workItemType { name } } } } }`)
+    .join("\n");
+  const data = await graphql(`query{ ${fields} }`);
+  const out = new Map();
+  gids.forEach((gid, i) => {
+    const node = data?.[`a${i}`];
+    const widget = (node?.widgets || []).find((w) => w && "parent" in w);
+    out.set(gid, widget?.parent || null);
+  });
+  return out;
+}
+
+// Colapsa la jerarquía para el resumen: cada work item de tipo "task" SUBE a su ancestro no-task
+// más cercano (normalmente la Epic —issue del proyecto "epics"—, a veces un issue padre); los
+// issues normales se quedan como están. Los items que comparten ancestro se funden en uno (los
+// títulos de sus hijos quedan como contexto para la IA). Las tasks sin ancestro no-task se
+// DESCARTAN: nunca deben aparecer en el resumen. Solo GitLab (github tiene stub de paridad).
+// ponytail: subida nivel a nivel en lotes (1-2 requests GraphQL); si la jerarquía fuese muy
+// profunda subiría el nº de niveles, no el de requests.
 async function collapseMilestoneEpics(issues) {
   const list = Array.isArray(issues) ? issues : [];
-  const epics = await Promise.all(list.map(issueEpic));
-  const byEpic = new Map();
+  // Estado por item: arranca en sí mismo; los "issue" ya están resueltos, los "task" deben subir.
+  const states = list.map((iss) => ({
+    done: iss.issueType !== "task",
+    orphan: false,
+    gid: `gid://gitlab/WorkItem/${iss.id}`,
+    title: iss.title,
+    url: iss.webUrl,
+  }));
+  for (let level = 0; level < 6; level++) {
+    const pending = states.filter((s) => !s.done && !s.orphan);
+    if (!pending.length) break;
+    let parents;
+    try {
+      parents = await workItemParents(pending.map((s) => s.gid));
+    } catch {
+      // Sin GraphQL no podemos subir: descartamos las tasks pendientes (nunca deben colarse).
+      for (const s of pending) s.orphan = true;
+      break;
+    }
+    for (const s of pending) {
+      const parent = parents.get(s.gid);
+      if (!parent) {
+        s.orphan = true; // task sin padre
+        continue;
+      }
+      s.gid = parent.id;
+      s.title = parent.title;
+      s.url = parent.webUrl;
+      if ((parent.workItemType?.name || "").toLowerCase() !== "task") s.done = true;
+    }
+  }
+
+  const byUrl = new Map();
   const items = [];
   list.forEach((iss, i) => {
-    const epic = epics[i];
-    if (epic) {
-      let item = byEpic.get(epic.id);
-      if (!item) {
-        item = { kind: "epic", title: epic.title, url: epic.url, children: [] };
-        byEpic.set(epic.id, item);
-        items.push(item);
-      }
-      item.children.push(iss.title);
+    const s = states[i];
+    if (s.orphan || !s.done) return; // task descartada (sin ancestro no-task)
+    let item = byUrl.get(s.url);
+    if (!item) {
+      item = { kind: isEpicUrl(s.url) ? "epic" : "issue", title: s.title, url: s.url, children: [], labels: [], desc: "" };
+      byUrl.set(s.url, item);
+      items.push(item);
+    }
+    if (s.url === iss.webUrl) {
+      // El representante es el propio item: aporta sus etiquetas/descripción como contexto.
+      item.labels = (iss.labels || []).map((l) => (typeof l === "string" ? l : l.name));
+      item.desc = iss.descriptionHtml || "";
     } else {
-      items.push({
-        kind: "issue",
-        title: iss.title,
-        url: iss.webUrl,
-        labels: (iss.labels || []).map((l) => (typeof l === "string" ? l : l.name)),
-        desc: iss.descriptionHtml || "",
-      });
+      // Un hijo (task) subió hasta este ancestro: su título da contexto a la IA.
+      item.children.push(iss.title);
     }
   });
   return items;

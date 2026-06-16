@@ -283,7 +283,8 @@ function buildSummaryPrompt(milestoneTitle, items) {
     }
     const labels = (it.labels || []).join(", ");
     const desc = stripHtml(it.desc).slice(0, 400);
-    return `[${i}] ${it.title}${labels ? ` (etiquetas: ${labels})` : ""}${desc ? ` — ${desc}` : ""}`;
+    const kids = (it.children || []).slice(0, 12).join("; ");
+    return `[${i}] ${it.title}${labels ? ` (etiquetas: ${labels})` : ""}${desc ? ` — ${desc}` : ""}${kids ? ` — subtareas: ${kids}` : ""}`;
   });
   return `Eres un asistente que prepara un resumen de novedades de un milestone para enviarlo por CORREO a todo el equipo, incluida gente NO técnica.
 
