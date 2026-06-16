@@ -3188,7 +3188,7 @@ function renderRepoSelect() {
   const select = $("#repo-select");
   const repos = state.config?.repos || [];
   const allOption = repos.length > 1
-    ? `<option value="${ALL_REPOS}" ${state.repo === ALL_REPOS ? "selected" : ""}>⭐ Todos los repos</option>`
+    ? `<option value="${ALL_REPOS}" ${state.repo === ALL_REPOS ? "selected" : ""}>Todos los repos</option>`
     : "";
   select.innerHTML = allOption + repos
     .map((r) => `<option value="${esc(r)}" ${r === state.repo ? "selected" : ""}>${esc(r)}</option>`)
@@ -3214,7 +3214,7 @@ async function boot() {
     (state.repo && state.config.repos.includes(state.repo) && state.repo) ||
     (remembered === ALL_REPOS && state.config.repos.length > 1 && ALL_REPOS) ||
     (state.config.repos.includes(remembered) && remembered) ||
-    state.config.repos[0] ||
+    (state.config.repos.length > 1 ? ALL_REPOS : state.config.repos[0]) ||
     null;
   if (state.config.lastBucket && !IS_SELFTEST) state.bucket = state.config.lastBucket;
   document.querySelectorAll(".bucket").forEach((b) => b.classList.remove("active"));
