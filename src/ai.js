@@ -123,13 +123,13 @@ function buildDiffText(files) {
 
 /* ---------- backend 1: SDK oficial (requiere ANTHROPIC_API_KEY) ---------- */
 
-async function generateViaSdk(prompt, model, effort) {
+async function generateViaSdk(prompt, model, effort, schema) {
   const Anthropic = require("@anthropic-ai/sdk").default;
   const client = new Anthropic();
   const request = {
     model,
     max_tokens: 16000,
-    output_config: { format: { type: "json_schema", schema: REVIEW_SCHEMA } },
+    output_config: { format: { type: "json_schema", schema } },
     messages: [{ role: "user", content: prompt }],
   };
   if (AI_MODELS[model].efforts.length) {
@@ -205,24 +205,33 @@ function extractJson(text) {
   return JSON.parse(candidate.slice(start, end + 1));
 }
 
+/* ---------- dispatch común ---------- */
+
+// Lanza el prompt contra el backend disponible (SDK si hay API key, si no el CLI) y devuelve
+// el JSON ya parseado + qué backend/modelo se usó. El schema solo lo aplica el SDK; el CLI
+// lo cumple por el prompt y se parsea de forma tolerante (extractJson).
+async function runStructured(prompt, schema) {
+  const { model, effort } = aiSettings();
+  if (process.env.ANTHROPIC_API_KEY) {
+    return { data: await generateViaSdk(prompt, model, effort, schema), backend: "anthropic-sdk", model, effort };
+  }
+  const cliPath = claudeCliPath();
+  if (cliPath) {
+    return { data: await generateViaCli(prompt, cliPath, model, effort), backend: "claude-cli", model, effort };
+  }
+  throw new Error(
+    "Sin backend de IA: exporta ANTHROPIC_API_KEY o instala/loguea el CLI de Claude Code (`claude`).",
+  );
+}
+
 /* ---------- API pública ---------- */
 
 async function generateReview({ title, body, files }) {
   const { diffText, truncated } = buildDiffText(files);
   if (!diffText) throw new Error("La PR no tiene diff revisable (¿binarios?)");
   const prompt = buildPrompt({ title, body, diffText, truncated });
-
-  const { model, effort } = aiSettings();
-  if (process.env.ANTHROPIC_API_KEY) {
-    return { review: normalize(await generateViaSdk(prompt, model, effort)), backend: "anthropic-sdk", model, effort };
-  }
-  const cliPath = claudeCliPath();
-  if (cliPath) {
-    return { review: normalize(await generateViaCli(prompt, cliPath, model, effort)), backend: "claude-cli", model, effort };
-  }
-  throw new Error(
-    "Sin backend de IA: exporta ANTHROPIC_API_KEY o instala/loguea el CLI de Claude Code (`claude`).",
-  );
+  const { data, backend, model, effort } = await runStructured(prompt, REVIEW_SCHEMA);
+  return { review: normalize(data), backend, model, effort };
 }
 
 function normalize(review) {
@@ -233,6 +242,104 @@ function normalize(review) {
       .map((c) => ({ path: c.path, line: c.line, side: c.side === "LEFT" ? "LEFT" : "RIGHT", body: c.body }))
       .slice(0, 12),
   };
+}
+
+/* ---------- resumen de milestone para correo ---------- */
+
+const SUMMARY_SCHEMA = {
+  type: "object",
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          index: { type: "integer", description: "Index (in brackets) of the source item this refers to." },
+          headline: { type: "string", description: "Short non-technical title in Spanish." },
+          relevance: {
+            type: "string",
+            enum: ["high", "medium", "low"],
+            description: "How relevant this is for a team-wide, non-technical email.",
+          },
+        },
+        required: ["index", "headline", "relevance"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["items"],
+  additionalProperties: false,
+};
+
+function stripHtml(html) {
+  return String(html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function buildSummaryPrompt(milestoneTitle, items) {
+  const lines = items.map((it, i) => {
+    if (it.kind === "epic") {
+      const kids = (it.children || []).slice(0, 12).join("; ");
+      return `[${i}] (EPIC) ${it.title}${kids ? ` — incluye: ${kids}` : ""}`;
+    }
+    const labels = (it.labels || []).join(", ");
+    const desc = stripHtml(it.desc).slice(0, 400);
+    const kids = (it.children || []).slice(0, 12).join("; ");
+    return `[${i}] ${it.title}${labels ? ` (etiquetas: ${labels})` : ""}${desc ? ` — ${desc}` : ""}${kids ? ` — subtareas: ${kids}` : ""}`;
+  });
+  return `Eres un asistente que prepara un resumen de novedades de un milestone para enviarlo por CORREO a todo el equipo, incluida gente NO técnica.
+
+Te paso una lista numerada de tareas (issues) y epics del milestone "${milestoneTitle}". Cada línea empieza por su índice entre corchetes.
+
+Tu trabajo:
+- Clasifica TODOS los items por relevancia para el equipo. NO descartes ninguno: el usuario los revisará y decidirá cuáles enviar.
+- Para cada uno escribe un "headline" corto y claro en ESPAÑOL, en lenguaje que entienda alguien no técnico (qué cambia o mejora, no el detalle técnico).
+- Asigna a cada uno una "relevance": "high", "medium" o "low" según lo relevante que sea para un correo no técnico a todo el equipo. Lo trivial e interno (chores, refactors menores, typos, mantenimiento sin impacto visible) → "low".
+- Una EPIC representa un conjunto de tareas: resúmela como UNA sola novedad, sin desglosar sus hijas.
+- Devuelve el índice original de cada item.
+
+Responde SOLO con un objeto JSON con esta forma (sin prosa ni cercos):
+{"items": [{"index": number, "headline": string, "relevance": "high"|"medium"|"low"}]}
+
+# Items
+${lines.join("\n")}`;
+}
+
+const RELEVANCE_RANK = { high: 0, medium: 1, low: 2 };
+
+// Recibe los items ya con las epics colapsadas (gitlab.collapseMilestoneEpics) y devuelve TODOS
+// clasificados por relevancia (con titular no técnico + enlace a GitLab); el usuario los curará en
+// la UI. kind/title/url se copian del item original por índice (nunca del modelo); los que la IA
+// omita o devuelva inválidos caen a relevance "low" con el title como headline para no perderlos.
+async function summarizeMilestone({ milestoneTitle, items }) {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) throw new Error("No hay tareas asignadas que resumir en este milestone.");
+  const prompt = buildSummaryPrompt(milestoneTitle || "", list);
+  const { data, backend, model, effort } = await runStructured(prompt, SUMMARY_SCHEMA);
+
+  // Indexa la respuesta de la IA por índice de item (última gana si hay duplicados).
+  const byIndex = new Map();
+  for (const it of Array.isArray(data.items) ? data.items : []) {
+    const index = Number(it && it.index);
+    if (!Number.isInteger(index) || !list[index]) continue;
+    const headline = typeof it.headline === "string" ? it.headline.trim() : "";
+    const relevance = RELEVANCE_RANK[it.relevance] !== undefined ? it.relevance : "low";
+    byIndex.set(index, { headline, relevance });
+  }
+
+  // Un item de salida por cada item de entrada, con fallback para los que falten o sean inválidos.
+  const result = list.map((item, index) => {
+    const ai = byIndex.get(index);
+    return {
+      kind: item.kind,
+      title: item.title,
+      url: item.url,
+      headline: ai && ai.headline ? ai.headline : item.title,
+      relevance: ai ? ai.relevance : "low",
+    };
+  });
+  result.sort((a, b) => RELEVANCE_RANK[a.relevance] - RELEVANCE_RANK[b.relevance]);
+
+  return { items: result, backend, model, effort };
 }
 
 /** Estado del backend de IA, para onboarding y ajustes. */
@@ -290,4 +397,4 @@ function isAiEffort(level) {
   return ALL_EFFORTS.includes(level);
 }
 
-module.exports = { generateReview, backendStatus, ping, isAiModel, isAiEffort };
+module.exports = { generateReview, summarizeMilestone, backendStatus, ping, isAiModel, isAiEffort };

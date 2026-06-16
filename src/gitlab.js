@@ -604,8 +604,10 @@ function mapIssue(issue) {
   );
   const description = issue.description || "";
   return {
+    id: issue.id, // id global (= WorkItem id en GraphQL), para resolver la jerarquía padre
     iid: issue.iid,
     projectId: issue.project_id,
+    issueType: issue.issue_type, // "issue" | "task" (work item) | ...
     // references.full = "group/project#iid"; nos quedamos con el path del proyecto.
     projectPath: (issue.references?.full || "").replace(/#\d+$/, ""),
     title: issue.title,
@@ -641,6 +643,38 @@ async function milestoneIssues(milestoneTitle, { includeClosed = false } = {}) {
   return issues.map(mapIssue);
 }
 
+// Descarga un avatar (privado, requiere token) y lo devuelve como data-URI para que el renderer
+// pueda pintarlo (las imágenes /uploads/-/system de una instancia privada dan 401 sin auth).
+async function fetchAvatarDataUri(url) {
+  try {
+    const { token } = resolveToken();
+    if (!token) return null;
+    const res = await fetch(url, { headers: { "PRIVATE-TOKEN": token, "User-Agent": "pulpo-app" } });
+    if (!res.ok) return null;
+    const type = res.headers.get("content-type") || "image/png";
+    const buf = Buffer.from(await res.arrayBuffer());
+    return `data:${type};base64,${buf.toString("base64")}`;
+  } catch {
+    return null;
+  }
+}
+
+// Proyectos del grupo (incl. subgrupos) con su icono ya resuelto a data-URI, para el filtro
+// por proyecto del resumen. ponytail: trae todos los del grupo y proxea los que tengan avatar
+// (una vez, el renderer cachea); si el grupo fuese enorme, limitar a los presentes en el milestone.
+async function groupProjects() {
+  const group = milestonesGroup();
+  if (!group) return [];
+  const projects = await apiAll(`/groups/${encodeURIComponent(group)}/projects?include_subgroups=true`);
+  return Promise.all(
+    projects.map(async (p) => ({
+      path: p.path_with_namespace,
+      name: p.name,
+      icon: p.avatar_url ? await fetchAvatarDataUri(p.avatar_url) : null,
+    })),
+  );
+}
+
 // Labels del grupo, para poder asignar cualquiera (no solo las de estado configuradas).
 async function groupLabels() {
   const group = milestonesGroup();
@@ -662,6 +696,111 @@ async function updateIssue(projectId, iid, patch) {
   if (patch.assigneeIds) body.assignee_ids = patch.assigneeIds.length ? patch.assigneeIds : [0];
   const updated = await api("PUT", `/projects/${projectId}/issues/${iid}`, body);
   return mapIssue(updated);
+}
+
+// Las Epics viven como issues en el proyecto "epics" del grupo: las detectamos por el último
+// segmento del path del proyecto en su URL.
+// ponytail: nombre de proyecto "epics" hardcodeado; si vuestra instancia lo llama distinto,
+// parametrizar en config.milestones.epicsProject.
+function isEpicUrl(webUrl) {
+  const path = (webUrl || "").replace(/\/-\/(issues|work_items)\/\d+.*$/, "");
+  return path.split("/").pop()?.toLowerCase() === "epics";
+}
+
+// Consulta GraphQL contra /api/graphql (REST no expone la jerarquía padre de work items).
+async function graphql(query, variables) {
+  const { token } = resolveToken();
+  if (!token) throw new Error("NO_TOKEN");
+  const { base } = settings();
+  const res = await fetch(`${base}/api/graphql`, {
+    method: "POST",
+    headers: { "PRIVATE-TOKEN": token, "User-Agent": "pulpo-app", "Content-Type": "application/json" },
+    body: JSON.stringify({ query, variables }),
+  });
+  const json = await res.json();
+  if (!res.ok || json.errors) throw new Error(json.errors?.[0]?.message || `GraphQL HTTP ${res.status}`);
+  return json.data;
+}
+
+// Padre (jerarquía de work items) de varios work items en UNA sola query con alias. Devuelve
+// Map<gid, parent|null> donde parent = {id, title, webUrl, workItemType:{name}}.
+async function workItemParents(gids) {
+  if (!gids.length) return new Map();
+  const fields = gids
+    .map((gid, i) => `a${i}: workItem(id:${JSON.stringify(gid)}){ widgets{ ... on WorkItemWidgetHierarchy { parent { id title webUrl workItemType { name } } } } }`)
+    .join("\n");
+  const data = await graphql(`query{ ${fields} }`);
+  const out = new Map();
+  gids.forEach((gid, i) => {
+    const node = data?.[`a${i}`];
+    const widget = (node?.widgets || []).find((w) => w && "parent" in w);
+    out.set(gid, widget?.parent || null);
+  });
+  return out;
+}
+
+// Colapsa la jerarquía para el resumen: cada work item de tipo "task" SUBE a su ancestro no-task
+// más cercano (normalmente la Epic —issue del proyecto "epics"—, a veces un issue padre); los
+// issues normales se quedan como están. Los items que comparten ancestro se funden en uno (los
+// títulos de sus hijos quedan como contexto para la IA). Las tasks sin ancestro no-task se
+// DESCARTAN: nunca deben aparecer en el resumen. Solo GitLab (github tiene stub de paridad).
+// ponytail: subida nivel a nivel en lotes (1-2 requests GraphQL); si la jerarquía fuese muy
+// profunda subiría el nº de niveles, no el de requests.
+async function collapseMilestoneEpics(issues) {
+  const list = Array.isArray(issues) ? issues : [];
+  // Estado por item: arranca en sí mismo; los "issue" ya están resueltos, los "task" deben subir.
+  const states = list.map((iss) => ({
+    done: iss.issueType !== "task",
+    orphan: false,
+    gid: `gid://gitlab/WorkItem/${iss.id}`,
+    title: iss.title,
+    url: iss.webUrl,
+  }));
+  for (let level = 0; level < 6; level++) {
+    const pending = states.filter((s) => !s.done && !s.orphan);
+    if (!pending.length) break;
+    let parents;
+    try {
+      parents = await workItemParents(pending.map((s) => s.gid));
+    } catch {
+      // Sin GraphQL no podemos subir: descartamos las tasks pendientes (nunca deben colarse).
+      for (const s of pending) s.orphan = true;
+      break;
+    }
+    for (const s of pending) {
+      const parent = parents.get(s.gid);
+      if (!parent) {
+        s.orphan = true; // task sin padre
+        continue;
+      }
+      s.gid = parent.id;
+      s.title = parent.title;
+      s.url = parent.webUrl;
+      if ((parent.workItemType?.name || "").toLowerCase() !== "task") s.done = true;
+    }
+  }
+
+  const byUrl = new Map();
+  const items = [];
+  list.forEach((iss, i) => {
+    const s = states[i];
+    if (s.orphan || !s.done) return; // task descartada (sin ancestro no-task)
+    let item = byUrl.get(s.url);
+    if (!item) {
+      item = { kind: isEpicUrl(s.url) ? "epic" : "issue", title: s.title, url: s.url, children: [], labels: [], desc: "" };
+      byUrl.set(s.url, item);
+      items.push(item);
+    }
+    if (s.url === iss.webUrl) {
+      // El representante es el propio item: aporta sus etiquetas/descripción como contexto.
+      item.labels = (iss.labels || []).map((l) => (typeof l === "string" ? l : l.name));
+      item.desc = iss.descriptionHtml || "";
+    } else {
+      // Un hijo (task) subió hasta este ancestro: su título da contexto a la IA.
+      item.children.push(iss.title);
+    }
+  });
+  return items;
 }
 
 module.exports = {
@@ -693,5 +832,7 @@ module.exports = {
   listMilestones,
   milestoneIssues,
   groupLabels,
+  groupProjects,
   updateIssue,
+  collapseMilestoneEpics,
 };
