@@ -249,20 +249,25 @@ function normalize(review) {
 const SUMMARY_SCHEMA = {
   type: "object",
   properties: {
-    highlights: {
+    items: {
       type: "array",
       items: {
         type: "object",
         properties: {
           index: { type: "integer", description: "Index (in brackets) of the source item this refers to." },
           headline: { type: "string", description: "Short non-technical title in Spanish." },
+          relevance: {
+            type: "string",
+            enum: ["high", "medium", "low"],
+            description: "How relevant this is for a team-wide, non-technical email.",
+          },
         },
-        required: ["index", "headline"],
+        required: ["index", "headline", "relevance"],
         additionalProperties: false,
       },
     },
   },
-  required: ["highlights"],
+  required: ["items"],
   additionalProperties: false,
 };
 
@@ -285,30 +290,55 @@ function buildSummaryPrompt(milestoneTitle, items) {
 Te paso una lista numerada de tareas (issues) y epics del milestone "${milestoneTitle}". Cada línea empieza por su índice entre corchetes.
 
 Tu trabajo:
-- Selecciona SOLO las más relevantes para el equipo: novedades, mejoras o cambios visibles. Descarta lo trivial e interno (chores, refactors menores, typos, mantenimiento sin impacto).
-- Para cada una escribe un "headline" corto y claro en ESPAÑOL, en lenguaje que entienda alguien no técnico (qué cambia o mejora, no el detalle técnico).
+- Clasifica TODOS los items por relevancia para el equipo. NO descartes ninguno: el usuario los revisará y decidirá cuáles enviar.
+- Para cada uno escribe un "headline" corto y claro en ESPAÑOL, en lenguaje que entienda alguien no técnico (qué cambia o mejora, no el detalle técnico).
+- Asigna a cada uno una "relevance": "high", "medium" o "low" según lo relevante que sea para un correo no técnico a todo el equipo. Lo trivial e interno (chores, refactors menores, typos, mantenimiento sin impacto visible) → "low".
 - Una EPIC representa un conjunto de tareas: resúmela como UNA sola novedad, sin desglosar sus hijas.
-- Devuelve el índice original de cada item seleccionado.
+- Devuelve el índice original de cada item.
 
 Responde SOLO con un objeto JSON con esta forma (sin prosa ni cercos):
-{"highlights": [{"index": number, "headline": string}]}
+{"items": [{"index": number, "headline": string, "relevance": "high"|"medium"|"low"}]}
 
 # Items
 ${lines.join("\n")}`;
 }
 
-// Recibe los items ya con las epics colapsadas (gitlab.collapseMilestoneEpics) y devuelve los
-// más relevantes con un titular no técnico + el enlace a GitLab del item correspondiente.
+const RELEVANCE_RANK = { high: 0, medium: 1, low: 2 };
+
+// Recibe los items ya con las epics colapsadas (gitlab.collapseMilestoneEpics) y devuelve TODOS
+// clasificados por relevancia (con titular no técnico + enlace a GitLab); el usuario los curará en
+// la UI. kind/title/url se copian del item original por índice (nunca del modelo); los que la IA
+// omita o devuelva inválidos caen a relevance "low" con el title como headline para no perderlos.
 async function summarizeMilestone({ milestoneTitle, items }) {
   const list = Array.isArray(items) ? items : [];
   if (!list.length) throw new Error("No hay tareas asignadas que resumir en este milestone.");
   const prompt = buildSummaryPrompt(milestoneTitle || "", list);
   const { data, backend, model, effort } = await runStructured(prompt, SUMMARY_SCHEMA);
-  const highlights = (Array.isArray(data.highlights) ? data.highlights : [])
-    .map((h) => ({ index: Number(h.index), headline: typeof h.headline === "string" ? h.headline.trim() : "" }))
-    .filter((h) => Number.isInteger(h.index) && list[h.index] && h.headline)
-    .map((h) => ({ headline: h.headline, url: list[h.index].url, kind: list[h.index].kind }));
-  return { highlights, backend, model, effort };
+
+  // Indexa la respuesta de la IA por índice de item (última gana si hay duplicados).
+  const byIndex = new Map();
+  for (const it of Array.isArray(data.items) ? data.items : []) {
+    const index = Number(it && it.index);
+    if (!Number.isInteger(index) || !list[index]) continue;
+    const headline = typeof it.headline === "string" ? it.headline.trim() : "";
+    const relevance = RELEVANCE_RANK[it.relevance] !== undefined ? it.relevance : "low";
+    byIndex.set(index, { headline, relevance });
+  }
+
+  // Un item de salida por cada item de entrada, con fallback para los que falten o sean inválidos.
+  const result = list.map((item, index) => {
+    const ai = byIndex.get(index);
+    return {
+      kind: item.kind,
+      title: item.title,
+      url: item.url,
+      headline: ai && ai.headline ? ai.headline : item.title,
+      relevance: ai ? ai.relevance : "low",
+    };
+  });
+  result.sort((a, b) => RELEVANCE_RANK[a.relevance] - RELEVANCE_RANK[b.relevance]);
+
+  return { items: result, backend, model, effort };
 }
 
 /** Estado del backend de IA, para onboarding y ajustes. */

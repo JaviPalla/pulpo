@@ -657,16 +657,59 @@ body {
   24% { transform: scale(1); }
 }
 .ms-toggles { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-top: 2px; border-top: 1px solid var(--border); }
-.ms-toggles #ms-email-summary { margin-left: auto; }
+.ms-toggles .ms-counter { margin-left: auto; }
 .ms-toggles .icon-btn { margin-left: 0; }
 
-/* Vista previa del resumen para correo en el modal. */
-.ms-sum-preview { margin-top: 10px; padding: 14px 16px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px; overflow-y: auto; }
+/* Sub-pestañas de la vista de milestones (Tareas | Resumen), bajo el rail. */
+.ms-tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+.ms-tab {
+  background: transparent; border: none; color: var(--text-muted); cursor: pointer;
+  font-size: 13px; font-weight: 600; padding: 8px 14px; border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.ms-tab:hover { color: var(--text); }
+.ms-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+
+/* Sub-pestaña Resumen. */
+.ms-summary { display: flex; flex-direction: column; gap: 14px; }
+.ms-sum-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ms-sum-title { margin: 0; font-size: 16px; }
+.ms-sum-meta { font-size: 12px; }
+.ms-sum-included { margin-left: auto; }
+.ms-sum-empty { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; }
+.ms-sum-empty p { max-width: 460px; margin: 0; line-height: 1.5; }
+
+.ms-sum-list { display: flex; flex-direction: column; gap: 6px; }
+.ms-sum-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px;
+  transition: opacity 0.18s ease;
+}
+.ms-sum-row.excluded { opacity: 0.5; }
+.ms-sum-texts { flex: 1 1 auto; min-width: 0; }
+.ms-sum-headline { font-weight: 600; }
+.ms-sum-orig { font-size: 12px; }
+.ms-sum-open { flex-shrink: 0; }
+.ms-sum-rel { font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 9px; flex-shrink: 0; }
+.ms-sum-rel.high { color: #fff; background: var(--accent); }
+.ms-sum-rel.medium { color: var(--text); border: 1px solid var(--border); }
+.ms-sum-rel.low { color: var(--text-muted); border: 1px solid var(--border); }
+
+/* Vista previa del correo: altura acotada plegable con "Leer más" + degradado al pie. */
+.ms-sum-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.ms-sum-preview { position: relative; padding: 14px 16px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px; }
+.ms-sum-preview.collapsed { max-height: 240px; overflow: hidden; }
+.ms-sum-preview.collapsed::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 56px; border-radius: 0 0 10px 10px;
+  background: linear-gradient(to bottom, transparent, var(--bg-raised));
+}
 .ms-sum-preview h4 { margin: 0 0 8px; }
 .ms-sum-preview ul { margin: 0; padding-left: 20px; }
 .ms-sum-preview li { margin: 5px 0; line-height: 1.45; }
 .ms-sum-preview a { color: var(--accent); text-decoration: none; }
 .ms-sum-preview a:hover { text-decoration: underline; }
+.ms-sum-readmore { margin-top: 8px; }
+.ms-sum-readmore.hidden { display: none; }
 /* Chips de filtro de estado: color (borde/relleno) vía estilo inline con el color real del label.
    El texto se calcula dinámico (readableText) para leerse siempre. */
 .ms-status-chip {

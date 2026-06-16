@@ -28,7 +28,7 @@ const state = {
   history: { branches: [], enabled: new Set(), layout: null, rows: [], loading: false, selectedOid: null },
   // Vista de Milestones (solo GitLab): tareas (issues) del milestone agrupadas por persona.
   // filters.status: Map<label, "include"|"exclude"> (chip tri-estado); se siembra con doneLabels en "exclude".
-  milestones: { list: [], selectedTitle: null, issues: [], loading: false, labels: [], selected: new Set(), filters: { status: new Map(), showClosed: false, showUnassigned: false, seeded: false } },
+  milestones: { list: [], selectedTitle: null, issues: [], loading: false, labels: [], selected: new Set(), filters: { status: new Map(), showClosed: false, showUnassigned: false, seeded: false }, tab: "tasks", summaryLoading: false, summaryPreviewExpanded: false },
   prSnapshot: null, // nº → {reviewDecision, checks, reviewMe} para detectar cambios y notificar
   cursor: -1, // selección con teclado (j/k) en la lista
   draftKeys: new Set(), // "owner/repo#n" con borradores guardados → badge 📝 en la lista
@@ -2490,8 +2490,15 @@ function renderMilestones() {
     })
     .join("");
 
-  list.innerHTML = `
-    <div class="ms-rail">${railHtml || `<span class="muted">Sin milestones activos</span>`}</div>
+  // Sub-pestañas (Tareas | Resumen): el rail se mantiene en ambas para poder cambiar de milestone.
+  const tab = m.tab === "summary" ? "summary" : "tasks";
+  const tabsHtml = `
+    <div class="ms-tabs">
+      <button class="ms-tab ${tab === "tasks" ? "active" : ""}" data-mstab="tasks">Tareas</button>
+      <button class="ms-tab ${tab === "summary" ? "active" : ""}" data-mstab="summary">Resumen</button>
+    </div>`;
+
+  const tasksBodyHtml = `
     <div class="ms-filters">
       ${statusFilterHelp()}
       ${statusChips ? `<div class="ms-status-bar">${statusChips}</div>` : ""}
@@ -2499,7 +2506,6 @@ function renderMilestones() {
         <label class="ms-closed-toggle"><input type="checkbox" id="ms-show-closed" ${m.filters.showClosed ? "checked" : ""} /> Mostrar cerradas</label>
         <label class="ms-closed-toggle"><input type="checkbox" id="ms-show-unassigned" ${m.filters.showUnassigned ? "checked" : ""} /> Mostrar sin asignar</label>
         <span class="ms-counter">${visible.length} tarea${visible.length === 1 ? "" : "s"}</span>
-        <button class="btn" id="ms-email-summary" title="Generar con IA un resumen de novedades para enviar por correo al equipo">✉ Resumen</button>
         <button class="icon-btn" id="ms-refresh" title="Recargar">⟳</button>
       </div>
     </div>
@@ -2511,6 +2517,20 @@ function renderMilestones() {
     </div>
     <div class="ms-board">${boardHtml}</div>`;
 
+  list.innerHTML = `
+    <div class="ms-rail">${railHtml || `<span class="muted">Sin milestones activos</span>`}</div>
+    ${tabsHtml}
+    ${tab === "summary" ? milestoneSummaryHtml() : tasksBodyHtml}`;
+
+  list.querySelectorAll(".ms-tab").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const next = btn.dataset.mstab;
+      if (m.tab === next) return;
+      m.tab = next;
+      renderMilestones();
+    }),
+  );
+
   // Clic en una tarjeta del rail = ver ese milestone (además de ser drop target para mover issues).
   list.querySelectorAll(".ms-drop-ms").forEach((item) =>
     item.addEventListener("click", () => {
@@ -2521,6 +2541,12 @@ function renderMilestones() {
       loadMilestones();
     }),
   );
+  if (tab === "summary") {
+    wireMilestoneSummary();
+    notifySelftestOnce();
+    return;
+  }
+
   $("#ms-show-closed")?.addEventListener("change", (event) => {
     // Las cerradas ya están en m.issues (se traen siempre para las métricas): solo es display.
     m.filters.showClosed = event.target.checked;
@@ -2535,7 +2561,6 @@ function renderMilestones() {
     m.issues = [];
     loadMilestones();
   });
-  $("#ms-email-summary")?.addEventListener("click", openMilestoneSummaryModal);
   list.querySelectorAll(".ms-status-chip").forEach((chip) =>
     chip.addEventListener("click", () => {
       // Ciclo tri-estado: neutro → incluir → excluir → neutro.
@@ -2601,34 +2626,127 @@ async function applyIssuePatch(keys, patchOrFn) {
   else if (ok) toast(`${ok} tarea${ok === 1 ? "" : "s"} actualizada${ok === 1 ? "" : "s"}`, "ok");
 }
 
-// Resumen para correo: pasa las issues ASIGNADAS (las de la vista de tareas por persona, estén
-// terminadas, pending check o lo que sea) al backend, que colapsa epics y deja que la IA elija
-// las más relevantes con un titular no técnico. Modal con vista previa + copiar HTML al correo.
-async function openMilestoneSummaryModal() {
+/* ============ resumen de novedades (sub-pestaña Resumen, solo GitLab) ============ */
+// Persistencia del resumen generado por IA en localStorage para no re-gastar tokens al reabrir.
+// ponytail: localStorage vive en el app-data de esta instalación (no portable entre máquinas/perfiles);
+// si algún día hace falta portabilidad, mover a un fichero en userData vía IPC como los borradores.
+function summaryKey(title) {
+  return `pulpo:ms-summary:${title}`;
+}
+
+function loadSummary(title) {
+  try {
+    const raw = localStorage.getItem(summaryKey(title));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSummary(title, data) {
+  try {
+    localStorage.setItem(summaryKey(title), JSON.stringify(data));
+  } catch {
+    /* cuota llena o modo restringido: el resumen sigue en memoria hasta recargar. */
+  }
+}
+
+function relevanceMeta(relevance) {
+  if (relevance === "high") return { cls: "high", label: "Alta" };
+  if (relevance === "low") return { cls: "low", label: "Baja" };
+  return { cls: "medium", label: "Media" };
+}
+
+// HTML autocontenido (sin clases del tema) para pegar en el correo, + texto plano de fallback.
+function summaryEmailContent(title, included) {
+  const heading = `Novedades — ${title}`;
+  const itemHtml = (h) => `<li>${h.kind === "epic" ? "📦 " : ""}<a href="${esc(h.url)}">${esc(h.headline)}</a></li>`;
+  const richHtml = `<h3>${esc(heading)}</h3>\n<ul>\n${included.map((h) => "  " + itemHtml(h)).join("\n")}\n</ul>`;
+  const plain = `${heading}\n\n${included.map((h) => `• ${h.headline}\n  ${h.url}`).join("\n")}`;
+  return { heading, itemHtml, richHtml, plain };
+}
+
+// Vista (HTML) de la sub-pestaña Resumen. Estado: cargando IA / sin generar / generado.
+function milestoneSummaryHtml() {
   const m = state.milestones;
   const title = m.selectedTitle || "";
+  const assignedCount = m.issues.filter((iss) => iss.assignees.length).length;
+  const stored = loadSummary(title);
+
+  if (m.summaryLoading) {
+    return `<div class="ms-summary">
+      <div class="ms-sum-head"><h3 class="ms-sum-title">Resumen de novedades</h3> <span class="muted">· ${esc(title)}</span></div>
+      <div class="loading">Analizando ${assignedCount} tarea${assignedCount === 1 ? "" : "s"} con IA…</div>
+    </div>`;
+  }
+
+  if (!stored) {
+    const empty = assignedCount
+      ? `<div class="empty ms-sum-empty">
+           <p>Genera con IA un resumen de novedades para el correo del equipo: analiza las ${assignedCount} tarea${assignedCount === 1 ? "" : "s"} asignadas y las ordena por relevancia. <span class="muted">Gasta tokens.</span></p>
+           <button class="btn btn-primary" id="ms-sum-generate">Generar resumen</button>
+         </div>`
+      : `<div class="empty ms-sum-empty"><p>No hay tareas asignadas en este milestone que resumir.</p></div>`;
+    return `<div class="ms-summary">
+      <div class="ms-sum-head"><h3 class="ms-sum-title">Resumen de novedades</h3> <span class="muted">· ${esc(title)}</span></div>
+      ${empty}
+    </div>`;
+  }
+
+  const items = stored.items || [];
+  const includedCount = items.filter((it) => it.included).length;
+  const when = stored.generatedAt ? new Date(stored.generatedAt).toLocaleString("es-ES") : "";
+  const meta = `Generado el ${esc(when)}${stored.model ? ` · ${esc(stored.model)}` : ""}`;
+
+  const rowsHtml = items
+    .map((it, idx) => {
+      const rel = relevanceMeta(it.relevance);
+      return `<div class="ms-sum-row ${it.included ? "" : "excluded"}" data-idx="${idx}">
+        <input type="checkbox" class="ms-task-check ms-sum-check" ${it.included ? "checked" : ""} title="Incluir en el correo" />
+        <span class="ms-sum-rel ${rel.cls}">${rel.label}</span>
+        <div class="ms-sum-texts">
+          <div class="ms-sum-headline">${it.kind === "epic" ? "📦 " : ""}${esc(it.headline)}</div>
+          <div class="ms-sum-orig muted">${esc(it.title)}</div>
+        </div>
+        <button class="icon-btn ms-sum-open" data-url="${esc(it.url)}" title="Abrir en GitLab">↗</button>
+      </div>`;
+    })
+    .join("");
+
+  const included = items.filter((it) => it.included);
+  const { heading, itemHtml } = summaryEmailContent(title, included);
+  const previewBody = included.length
+    ? `<h4>${esc(heading)}</h4><ul>${included.map(itemHtml).join("")}</ul>`
+    : `<p class="muted">No hay novedades incluidas. Marca alguna tarea arriba.</p>`;
+
+  return `<div class="ms-summary">
+    <div class="ms-sum-head">
+      <h3 class="ms-sum-title">Resumen de novedades</h3> <span class="muted">· ${esc(title)}</span>
+      <span class="ms-sum-meta muted">${meta}</span>
+      <span class="ms-counter ms-sum-included">${includedCount} de ${items.length} incluidas</span>
+      <button class="btn" id="ms-sum-regenerate" title="Vuelve a llamar a la IA (gasta tokens)">Regenerar</button>
+    </div>
+    <div class="ms-sum-list">${rowsHtml}</div>
+    <div class="ms-sum-preview-wrap">
+      <div class="ms-sum-preview-head">
+        <span class="muted">Vista previa del correo</span>
+        <button class="btn btn-primary" id="ms-sum-copy">Copiar para el correo</button>
+      </div>
+      <div class="ms-sum-preview collapsed" id="ms-sum-preview">${previewBody}</div>
+      <button class="btn ghost ms-sum-readmore hidden" id="ms-sum-readmore">Leer más</button>
+    </div>
+  </div>`;
+}
+
+// Llama al backend de IA con las tareas asignadas, marca include por defecto (relevancia ≠ low),
+// persiste y re-renderiza. NO atómico ni reintentable: un fallo deja el estado anterior intacto.
+async function generateMilestoneSummary(title) {
+  const m = state.milestones;
   const assigned = m.issues.filter((iss) => iss.assignees.length);
   if (!assigned.length) {
     toast("No hay tareas asignadas en este milestone", "");
     return;
   }
-  const root = $("#modal-root");
-  root.innerHTML = `
-    <div class="modal-backdrop" id="modal-backdrop">
-      <div class="modal modal-wide">
-        <h3>Resumen para correo · ${esc(title)}</h3>
-        <div id="ms-sum-body"><div class="loading">Analizando ${assigned.length} tareas con IA…</div></div>
-        <div class="modal-actions" id="ms-sum-actions">
-          <button class="btn" id="modal-cancel">Cerrar</button>
-        </div>
-      </div>
-    </div>`;
-  const close = () => (root.innerHTML = "");
-  $("#modal-backdrop").addEventListener("click", (event) => {
-    if (event.target.id === "modal-backdrop") close();
-  });
-  $("#modal-cancel").addEventListener("click", close);
-
   const payload = assigned.map((iss) => ({
     projectId: iss.projectId,
     iid: iss.iid,
@@ -2638,28 +2756,84 @@ async function openMilestoneSummaryModal() {
     descriptionHtml: iss.descriptionHtml,
     labels: iss.labels.map((l) => ({ name: l.name })),
   }));
-
+  m.summaryLoading = true;
+  renderMilestones();
   try {
-    const { highlights } = await window.pulpo.summarizeMilestone(title, payload);
-    if (!highlights.length) {
-      $("#ms-sum-body").innerHTML = `<div class="empty">La IA no encontró novedades relevantes que destacar.</div>`;
+    const { items, model } = await window.pulpo.summarizeMilestone(title, payload);
+    const stored = {
+      generatedAt: new Date().toISOString(),
+      model: model || "",
+      // include por defecto: alta + media marcadas, baja desmarcada.
+      items: (items || []).map((it) => ({
+        kind: it.kind,
+        title: it.title,
+        url: it.url,
+        headline: it.headline,
+        relevance: it.relevance,
+        included: it.relevance !== "low",
+      })),
+    };
+    saveSummary(title, stored);
+  } catch (err) {
+    toast(`Error generando el resumen: ${String(err.message || err)}`, "err");
+  } finally {
+    m.summaryLoading = false;
+    m.summaryPreviewExpanded = false;
+    renderMilestones();
+  }
+}
+
+// Engancha los controles de la sub-pestaña Resumen tras cada render.
+function wireMilestoneSummary() {
+  const m = state.milestones;
+  const title = m.selectedTitle || "";
+
+  $("#ms-sum-generate")?.addEventListener("click", () => generateMilestoneSummary(title));
+  $("#ms-sum-regenerate")?.addEventListener("click", () => generateMilestoneSummary(title));
+
+  // Toggle include/exclude: actualiza el item, re-persiste y re-renderiza (refresca preview + contador).
+  list.querySelectorAll(".ms-sum-check").forEach((box) =>
+    box.addEventListener("change", (event) => {
+      const idx = Number(event.target.closest(".ms-sum-row").dataset.idx);
+      const stored = loadSummary(title);
+      if (!stored?.items?.[idx]) return;
+      stored.items[idx].included = event.target.checked;
+      saveSummary(title, stored);
+      renderMilestones();
+    }),
+  );
+
+  list.querySelectorAll(".ms-sum-open").forEach((btn) =>
+    btn.addEventListener("click", () => window.pulpo.openExternal(btn.dataset.url)),
+  );
+
+  $("#ms-sum-copy")?.addEventListener("click", () => {
+    const stored = loadSummary(title);
+    const included = (stored?.items || []).filter((it) => it.included);
+    if (!included.length) {
+      toast("No hay novedades incluidas para copiar", "");
       return;
     }
-    const heading = `Novedades — ${title}`;
-    const itemHtml = (h) => `<li>${h.kind === "epic" ? "📦 " : ""}<a href="${esc(h.url)}">${esc(h.headline)}</a></li>`;
-    // HTML para el portapapeles (pegar en el correo): autocontenido, sin clases del tema.
-    const richHtml = `<h3>${esc(heading)}</h3>\n<ul>\n${highlights.map((h) => "  " + itemHtml(h)).join("\n")}\n</ul>`;
-    const plain = `${heading}\n\n${highlights.map((h) => `• ${h.headline}\n  ${h.url}`).join("\n")}`;
-    $("#ms-sum-body").innerHTML = `
-      <p class="muted">${highlights.length} novedad${highlights.length === 1 ? "" : "es"} · revísalas antes de enviar.</p>
-      <div class="ms-sum-preview"><h4>${esc(heading)}</h4><ul>${highlights.map(itemHtml).join("")}</ul></div>`;
-    const copy = document.createElement("button");
-    copy.className = "btn btn-primary";
-    copy.textContent = "Copiar para el correo";
-    copy.addEventListener("click", () => copyRich(richHtml, plain));
-    $("#ms-sum-actions").appendChild(copy);
-  } catch (err) {
-    $("#ms-sum-body").innerHTML = `<div class="empty">Error generando el resumen: ${esc(String(err.message || err))}</div>`;
+    const { richHtml, plain } = summaryEmailContent(title, included);
+    copyRich(richHtml, plain);
+  });
+
+  // "Leer más": solo si el preview se desborda de su altura acotada. Mantiene el estado expandido
+  // entre re-renders (toggles de include) reaplicando la clase tras pintar.
+  const preview = $("#ms-sum-preview");
+  const readMore = $("#ms-sum-readmore");
+  if (preview && readMore) {
+    if (m.summaryPreviewExpanded) preview.classList.remove("collapsed");
+    const overflows = preview.scrollHeight > preview.clientHeight;
+    if (overflows || m.summaryPreviewExpanded) {
+      readMore.classList.remove("hidden");
+      readMore.textContent = m.summaryPreviewExpanded ? "Leer menos" : "Leer más";
+      readMore.addEventListener("click", () => {
+        m.summaryPreviewExpanded = !m.summaryPreviewExpanded;
+        preview.classList.toggle("collapsed", !m.summaryPreviewExpanded);
+        readMore.textContent = m.summaryPreviewExpanded ? "Leer menos" : "Leer más";
+      });
+    }
   }
 }
 
