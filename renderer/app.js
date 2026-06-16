@@ -2701,13 +2701,15 @@ function milestoneSummaryHtml() {
   const rowsHtml = items
     .map((it, idx) => {
       const rel = relevanceMeta(it.relevance);
-      return `<div class="ms-sum-row ${it.included ? "" : "excluded"}" data-idx="${idx}">
+      return `<div class="ms-sum-row ${it.included ? "" : "excluded"}" data-idx="${idx}" draggable="true">
+        <span class="ms-sum-grip" title="Arrastra para reordenar">⠿</span>
         <input type="checkbox" class="ms-task-check ms-sum-check" ${it.included ? "checked" : ""} title="Incluir en el correo" />
         <span class="ms-sum-rel ${rel.cls}">${rel.label}</span>
         <div class="ms-sum-texts">
           <div class="ms-sum-headline">${it.kind === "epic" ? "📦 " : ""}${esc(it.headline)}</div>
           <div class="ms-sum-orig muted">${esc(it.title)}</div>
         </div>
+        <button class="icon-btn ms-sum-edit" title="Editar título">✎</button>
         <button class="icon-btn ms-sum-open" data-url="${esc(it.url)}" title="Abrir en GitLab">↗</button>
       </div>`;
     })
@@ -2748,8 +2750,10 @@ async function generateMilestoneSummary(title) {
     return;
   }
   const payload = assigned.map((iss) => ({
+    id: iss.id,
     projectId: iss.projectId,
     iid: iss.iid,
+    issueType: iss.issueType,
     title: iss.title,
     webUrl: iss.webUrl,
     state: iss.state,
@@ -2806,6 +2810,76 @@ function wireMilestoneSummary() {
   list.querySelectorAll(".ms-sum-open").forEach((btn) =>
     btn.addEventListener("click", () => window.pulpo.openExternal(btn.dataset.url)),
   );
+
+  // Editar el título: el lápiz cambia el headline por un input; Enter/blur persiste, Escape cancela.
+  list.querySelectorAll(".ms-sum-edit").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const row = btn.closest(".ms-sum-row");
+      const idx = Number(row.dataset.idx);
+      const stored = loadSummary(title);
+      if (!stored?.items?.[idx]) return;
+      const headlineEl = row.querySelector(".ms-sum-headline");
+      row.setAttribute("draggable", "false"); // no arrastrar mientras se edita
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "modal-input ms-sum-edit-input";
+      input.value = stored.items[idx].headline;
+      headlineEl.replaceWith(input);
+      input.focus();
+      input.select();
+      let done = false;
+      const commit = (save) => {
+        if (done) return;
+        done = true;
+        if (save) {
+          const v = input.value.trim();
+          const s = loadSummary(title);
+          if (v && s?.items?.[idx]) {
+            s.items[idx].headline = v;
+            saveSummary(title, s);
+          }
+        }
+        renderMilestones();
+      };
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") { event.preventDefault(); commit(true); }
+        else if (event.key === "Escape") { event.preventDefault(); commit(false); }
+      });
+      input.addEventListener("blur", () => commit(true));
+    }),
+  );
+
+  // Reordenar por drag&drop: soltar una fila sobre otra la inserta en esa posición. Persiste el
+  // nuevo orden de stored.items, del que cuelgan tanto la lista como la vista previa del correo.
+  let dragIdx = null;
+  list.querySelectorAll(".ms-sum-row").forEach((row) => {
+    row.addEventListener("dragstart", (event) => {
+      dragIdx = Number(row.dataset.idx);
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", String(dragIdx));
+      row.classList.add("dragging");
+    });
+    row.addEventListener("dragend", () => row.classList.remove("dragging"));
+    row.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      row.classList.add("drag-over");
+    });
+    row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
+    row.addEventListener("drop", (event) => {
+      event.preventDefault();
+      row.classList.remove("drag-over");
+      const from = dragIdx ?? Number(event.dataTransfer.getData("text/plain"));
+      const to = Number(row.dataset.idx);
+      dragIdx = null;
+      if (!Number.isInteger(from) || from === to) return;
+      const stored = loadSummary(title);
+      if (!stored?.items) return;
+      const [moved] = stored.items.splice(from, 1);
+      stored.items.splice(to, 0, moved);
+      saveSummary(title, stored);
+      renderMilestones();
+    });
+  });
 
   $("#ms-sum-copy")?.addEventListener("click", () => {
     const stored = loadSummary(title);
