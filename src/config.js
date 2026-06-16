@@ -52,26 +52,21 @@ const DEFAULTS = {
     // abierto con cualquiera de estas no cuenta como pendiente. Editable por instancia.
     doneLabels: ["finished", "pending check", "pending check by issuer", "pending check in pruebas"],
   },
-  // Vista de Releases (solo GitLab): genera la release branch rb/<version> en un set de
-  // proyectos configurable, replicando el script legacy auto-rb-branches.py. Cada proyecto
-  // es {id, name, note?}: id = id numérico o path GitLab (vale cualquiera de los dos en la
-  // API); name = etiqueta legible; note = aviso operativo opcional (p.ej. Ouicare/AppDate).
+  // Vista de Releases (solo GitLab): genera la release branch rb/<version> replicando el script
+  // legacy auto-rb-branches.py. Los PROYECTOS a elegir NO se hardcodean: se sacan del grupo en vivo
+  // (groupProjects), así no se queda corto el listado. Aquí solo van rama origen, prefijo y Ouicare.
   releases: {
     // Rama origen por defecto de la que sale la release branch (ref del POST de creación).
     sourceBranch: "development",
-    // Prefijo de la rama de salida; el nombre final es `${branchPrefix}${version}` (p.ej. rb/062026-mx).
+    // Prefijo de la rama de salida; el nombre final es `${branchPrefix}${version}` (p.ej. rb/062026).
     branchPrefix: "rb/",
-    // Set de proyectos por defecto (los del script legacy). Editable por instancia.
-    projects: [
-      { id: "12", name: "openhealthcare-api" },
-      { id: "42", name: "notifications-api" },
-      { id: "25", name: "user-api" },
-      { id: "4", name: "ouicare", note: "Cambiar AppDate en Ouicare antes de crear la rama." },
-      { id: "11", name: "webapp-v2-vue" },
-      { id: "13", name: "landing-profesionales" },
-      { id: "19", name: "dashboard" },
-      { id: "58", name: "webjobs" },
-    ],
+    // Ouicare: el AppDate es una appSetting del Web.config (cache-buster del appcache) que hay que
+    // bumpear en cada release. Se actualiza en la rama origen antes de crear la release branch.
+    ouicare: {
+      projectPath: "OpenSaludGroup/opensalud",
+      webConfigPath: "Ouicare/Web.config",
+      appDateKey: "AppDate",
+    },
   },
 };
 
@@ -88,8 +83,9 @@ function load() {
     cfg.cherryPick = { ...DEFAULTS.cherryPick, ...(parsed.cherryPick || {}) };
     // Merge profundo de milestones: un guardado parcial no debe pisar los defaults del resto de claves.
     cfg.milestones = { ...DEFAULTS.milestones, ...(parsed.milestones || {}) };
-    // Merge profundo de releases: un guardado parcial no debe pisar los defaults del resto de claves.
+    // Merge profundo de releases (incl. la clave anidada ouicare): un guardado parcial no debe pisar defaults.
     cfg.releases = { ...DEFAULTS.releases, ...(parsed.releases || {}) };
+    cfg.releases.ouicare = { ...DEFAULTS.releases.ouicare, ...(parsed.releases?.ouicare || {}) };
     return cfg;
   } catch {
     return { ...DEFAULTS };

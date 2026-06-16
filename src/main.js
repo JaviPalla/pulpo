@@ -14,8 +14,9 @@ const gh = () => provider.current();
 const SELFTEST = process.argv.includes("--selftest");
 const SELFTEST_SHOT = "/tmp/pulpo-selftest.png";
 const SELFTEST_ROUTE = (process.argv.find((a) => a.startsWith("--selftest-route=")) || "").split("=")[1] || "list";
-// La ruta de resumen espera a una llamada de IA (puede tardar bastante con Opus): timeout amplio.
-const SELFTEST_TIMEOUT_MS = SELFTEST_ROUTE === "milestones-summary" ? 240000 : 20000;
+// La ruta de resumen espera a una IA (lenta con Opus); la de releases proxea los avatares del grupo
+// entero (groupProjects). Ambas necesitan más margen que los 20s por defecto.
+const SELFTEST_TIMEOUT_MS = SELFTEST_ROUTE === "milestones-summary" ? 240000 : SELFTEST_ROUTE === "releases" ? 60000 : 20000;
 
 let win = null;
 
@@ -128,14 +129,12 @@ function wireIpc() {
       const branchRe = /^[\w./-]{1,200}$/;
       if (typeof r.sourceBranch === "string" && branchRe.test(r.sourceBranch.trim())) next.sourceBranch = r.sourceBranch.trim();
       if (typeof r.branchPrefix === "string" && /^[\w./-]{0,40}$/.test(r.branchPrefix)) next.branchPrefix = r.branchPrefix;
-      if (Array.isArray(r.projects)) {
-        next.projects = r.projects
-          .filter((p) => p && (typeof p.id === "string" || typeof p.id === "number") && typeof p.name === "string" && p.name.trim())
-          .map((p) => {
-            const out = { id: String(p.id), name: p.name.trim() };
-            if (typeof p.note === "string" && p.note.trim()) out.note = p.note.trim();
-            return out;
-          });
+      if (r.ouicare && typeof r.ouicare === "object") {
+        const o = { ...current.releases.ouicare };
+        if (typeof r.ouicare.projectPath === "string" && r.ouicare.projectPath.trim()) o.projectPath = r.ouicare.projectPath.trim();
+        if (typeof r.ouicare.webConfigPath === "string" && r.ouicare.webConfigPath.trim()) o.webConfigPath = r.ouicare.webConfigPath.trim();
+        if (typeof r.ouicare.appDateKey === "string" && r.ouicare.appDateKey.trim()) o.appDateKey = r.ouicare.appDateKey.trim();
+        next.ouicare = o;
       }
       allowed.releases = next;
     }
@@ -218,20 +217,32 @@ function wireIpc() {
   });
 
   ipcMain.handle("releases:defaults", async () => gh().releaseDefaults());
-  ipcMain.handle("releases:generate", async (_event, { version, sourceBranch, projectIds }) => {
-    const { branchPrefix, sourceBranch: defSource, projects } = await gh().releaseDefaults();
+  ipcMain.handle("releases:generate", async (_event, { version, sourceBranch, projects, ouicare }) => {
+    const { branchPrefix, sourceBranch: defSource, ouicare: cfgOuicare } = await gh().releaseDefaults();
     const v = typeof version === "string" ? version.trim() : "";
     if (!v) throw new Error("Falta el nombre de versión");
     // Validamos el nombre de rama FINAL (prefijo + versión) con la misma regla que el resto de ramas.
     if (!BRANCH_RE.test(`${branchPrefix}${v}`)) throw new Error("Nombre de versión no válido");
     const src = typeof sourceBranch === "string" && sourceBranch.trim() ? sourceBranch.trim() : defSource;
     if (!BRANCH_RE.test(src)) throw new Error("Rama origen no válida");
-    // El renderer solo elige CUÁLES de los proyectos configurados ejecutar; nunca proyectos
-    // arbitrarios. Filtramos por el set de config (ids como string) para no crear ramas fuera de él.
-    const want = new Set((projectIds || []).map((id) => String(id)));
-    const selected = projects.filter((p) => want.has(String(p.id)));
+    // Los proyectos los elige el renderer del grupo (paths). Validamos el FORMATO del id (path
+    // anidado o id numérico); los permisos del token en GitLab son el límite real de a qué proyecto
+    // se puede escribir. ponytail: no re-fetch del grupo solo para validar (groupProjects proxea
+    // avatares = caro); path-format + perms bastan.
+    const PATH_RE = /^[\w.-]+(\/[\w.-]+)+$|^\d+$/;
+    const selected = (projects || [])
+      .filter((p) => p && typeof p.id === "string" && PATH_RE.test(p.id))
+      .map((p) => ({ id: p.id, name: typeof p.name === "string" && p.name.trim() ? p.name.trim() : p.id }));
     if (!selected.length) throw new Error("No hay proyectos seleccionados");
-    return gh().generateReleaseBranches({ projects: selected, version: v, sourceBranch: src });
+    // Ouicare AppDate: projectPath/webConfigPath/appDateKey salen de CONFIG (no del renderer);
+    // del renderer solo enabled + date (DDMMYYYY, validada aquí).
+    let ouicareArg = null;
+    if (ouicare && ouicare.enabled && cfgOuicare) {
+      const date = typeof ouicare.date === "string" ? ouicare.date : "";
+      if (!/^\d{8}$/.test(date)) throw new Error("Fecha de AppDate no válida (DDMMYYYY)");
+      ouicareArg = { ...cfgOuicare, enabled: true, date };
+    }
+    return gh().generateReleaseBranches({ projects: selected, version: v, sourceBranch: src, ouicare: ouicareArg });
   });
 
   ipcMain.handle("shell:open", (_event, url) => {

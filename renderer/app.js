@@ -29,10 +29,11 @@ const state = {
   // Vista de Milestones (solo GitLab): tareas (issues) del milestone agrupadas por persona.
   // filters.status: Map<label, "include"|"exclude"> (chip tri-estado); se siembra con doneLabels en "exclude".
   milestones: { list: [], selectedTitle: null, issues: [], loading: false, labels: [], selected: new Set(), filters: { status: new Map(), showClosed: false, showUnassigned: false, seeded: false }, tab: "tasks", summaryLoading: false, summaryPreviewExpanded: false, projects: null },
-  // Vista de Releases (solo GitLab): genera la release branch rb/<version> en el set de proyectos
-  // configurado. `defaults` = {branchPrefix, sourceBranch, projects[]} del backend; `selected` =
-  // ids de proyecto elegidos para ejecutar; `results` = reporte por-proyecto de la última generación.
-  releases: { defaults: null, loading: false, running: false, selected: new Set(), version: "", sourceBranch: "", results: null },
+  // Vista de Releases (solo GitLab): genera la release branch rb/<version>. `defaults` =
+  // {branchPrefix, sourceBranch, ouicare} del backend; `projects` = proyectos del grupo (groupProjects,
+  // con icono) entre los que elegir; `selected` = paths elegidos; `appDate` = ISO (YYYY-MM-DD) para
+  // el input nativo, se convierte a DDMMYYYY al enviar; `results` = reporte de la última generación.
+  releases: { defaults: null, projects: [], loading: false, running: false, selected: new Set(), version: "", sourceBranch: "", appDateEnabled: true, appDate: "", results: null },
   prSnapshot: null, // nº → {reviewDecision, checks, reviewMe} para detectar cambios y notificar
   cursor: -1, // selección con teclado (j/k) en la lista
   draftKeys: new Set(), // "owner/repo#n" con borradores guardados → badge 📝 en la lista
@@ -3206,9 +3207,18 @@ async function loadReleases() {
   renderReleases();
   try {
     if (!r.defaults) r.defaults = await window.pulpo.releasesDefaults();
-    // De fábrica seleccionamos TODOS los proyectos configurados (el usuario deselecciona los que no quiera).
-    if (!r.selected.size) for (const p of r.defaults.projects) r.selected.add(String(p.id));
+    // Proyectos: del grupo en vivo (mismos datos + iconos que el filtro del resumen). No archivados.
+    await ensureProjects();
+    if (!r.projects.length) {
+      r.projects = [...(state.milestones.projects?.values() || [])]
+        .filter((p) => !p.archived)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      // De fábrica TODOS seleccionados (así no falta ninguno); el usuario deselecciona los que no quiera.
+      if (!r.selected.size) for (const p of r.projects) r.selected.add(p.path);
+    }
+    if (!r.version) r.version = suggestedReleaseVersion(); // por defecto: mes+año actual (p.ej. 062026)
     if (!r.sourceBranch) r.sourceBranch = r.defaults.sourceBranch || "development";
+    if (!r.appDate) r.appDate = new Date().toISOString().slice(0, 10); // hoy (YYYY-MM-DD) para el input
     r.loading = false;
     renderReleases();
   } catch (err) {
@@ -3218,11 +3228,16 @@ async function loadReleases() {
   }
 }
 
-// Sugerencia de versión: MMAAAA del mes actual (p.ej. 062026). El usuario suele añadir el sufijo
-// "-mx" para la rama hermana; no lo prefijamos para no crear ramas equivocadas sin querer.
+// Versión por defecto: MMAAAA del mes actual (p.ej. 062026), como pidió el usuario.
 function suggestedReleaseVersion() {
   const now = new Date();
   return `${String(now.getMonth() + 1).padStart(2, "0")}${now.getFullYear()}`;
+}
+
+// ISO (YYYY-MM-DD del input nativo) -> DDMMYYYY (formato del AppDate en el Web.config de Ouicare).
+function isoToAppDate(iso) {
+  const [y, m, d] = (iso || "").split("-");
+  return y && m && d ? `${d}${m}${y}` : "";
 }
 
 // Nombre de rama final válido (prefijo + versión) con la misma regla que valida el backend.
@@ -3240,46 +3255,63 @@ function renderReleases() {
     return;
   }
   const prefix = r.defaults.branchPrefix || "rb/";
-  const projects = r.defaults.projects || [];
-  const resultsById = new Map((r.results?.results || []).map((res) => [String(res.id), res]));
+  const projects = r.projects || [];
+  const ouicarePath = r.defaults.ouicare?.projectPath || null;
+  const ouicareSelected = Boolean(ouicarePath && r.selected.has(ouicarePath));
 
-  const rowsHtml = projects
+  // Chips de proyecto: mismo diseño que el filtro por proyecto del resumen (.ms-proj-chip + icono).
+  // Aquí seleccionado = normal, deseleccionado = .off (tachado). Clic alterna.
+  const chipsHtml = projects
     .map((p) => {
-      const id = String(p.id);
-      const checked = r.selected.has(id);
-      const res = resultsById.get(id);
-      const resHtml = res
-        ? res.ok
-          ? `<a class="rel-res ok" href="${esc(res.webUrl || "#")}" data-url="${esc(res.webUrl || "")}" title="Abrir la rama en GitLab">✓ creada</a>`
-          : `<span class="rel-res err" title="${esc(res.error || "")}">✕ ${esc(res.error || "error")}</span>`
-        : "";
-      return `
-        <label class="rel-proj ${checked ? "on" : ""}">
-          <input type="checkbox" class="rel-proj-check" data-id="${esc(id)}" ${checked ? "checked" : ""} ${r.running ? "disabled" : ""} />
-          <span class="rel-proj-main">
-            <span class="rel-proj-name">${esc(p.name || id)}</span>
-            <span class="rel-proj-id">#${esc(id)}</span>
-          </span>
-          ${p.note ? `<span class="rel-proj-note" title="${esc(p.note)}">⚠️ ${esc(p.note)}</span>` : ""}
-          ${resHtml}
-        </label>`;
+      const off = !r.selected.has(p.path);
+      return `<button class="ms-proj-chip ${off ? "off" : ""}" data-path="${esc(p.path)}" ${r.running ? "disabled" : ""}
+        title="${off ? "Excluido · clic para incluir" : "Incluido · clic para excluir"}">
+        ${projectIconHtml(p.path)}<span class="ms-proj-name">${esc(p.name)}</span>
+      </button>`;
     })
     .join("");
 
-  const selCount = projects.filter((p) => r.selected.has(String(p.id))).length;
+  const selCount = projects.filter((p) => r.selected.has(p.path)).length;
   const allOn = selCount === projects.length && projects.length > 0;
   const valid = releaseBranchValid(r.version);
   const canRun = valid && selCount > 0 && !r.running;
   const branchPreview = `${prefix}${r.version || ""}`;
 
-  const summaryHtml = r.results
-    ? (() => {
-        const ok = r.results.results.filter((x) => x.ok).length;
-        const fail = r.results.results.length - ok;
-        const cls = fail ? (ok ? "warn" : "err") : "ok";
-        return `<div class="rel-summary ${cls}">Rama <code>${esc(r.results.branch)}</code> desde <code>${esc(r.results.ref)}</code> · ${ok} creada${ok === 1 ? "" : "s"}${fail ? ` · ${fail} con error` : ""}</div>`;
-      })()
+  // Panel AppDate de Ouicare: solo visible si Ouicare está entre los seleccionados.
+  const appDateHtml = ouicareSelected
+    ? `<div class="rel-appdate">
+        <label class="rel-appdate-toggle">
+          <input type="checkbox" id="rel-appdate-on" ${r.appDateEnabled ? "checked" : ""} ${r.running ? "disabled" : ""} />
+          Actualizar <code>AppDate</code> de Ouicare (<code>${esc(r.defaults.ouicare.webConfigPath)}</code>)
+        </label>
+        <input type="date" id="rel-appdate-date" value="${esc(r.appDate)}" ${r.appDateEnabled && !r.running ? "" : "disabled"} />
+        <span class="muted">Se commitea en <code>${esc(r.sourceBranch)}</code> antes de crear la rama.</span>
+      </div>`
     : "";
+
+  // Bloque de resultados de la última generación (AppDate + por-proyecto).
+  let resultsHtml = "";
+  if (r.results) {
+    const ok = r.results.results.filter((x) => x.ok).length;
+    const fail = r.results.results.length - ok;
+    const cls = fail ? (ok ? "warn" : "err") : "ok";
+    const ad = r.results.appDate;
+    const adHtml = ad
+      ? ad.ok
+        ? `<div class="rel-res-row ok">📝 Ouicare AppDate ${ad.skipped ? `ya estaba en <b>${esc(ad.date)}</b>` : `→ <b>${esc(ad.date)}</b>`}</div>`
+        : `<div class="rel-res-row err">📝 Ouicare AppDate: ${esc(ad.error || "error")}</div>`
+      : "";
+    const rowsHtml = r.results.results
+      .map((res) =>
+        res.ok
+          ? `<div class="rel-res-row ok">✓ ${esc(res.name)} ${res.webUrl ? `<a data-url="${esc(res.webUrl)}" href="#">ver rama</a>` : ""}</div>`
+          : `<div class="rel-res-row err" title="${esc(res.error || "")}">✕ ${esc(res.name)}: ${esc(res.error || "error")}</div>`,
+      )
+      .join("");
+    resultsHtml = `
+      <div class="rel-summary ${cls}">Rama <code>${esc(r.results.branch)}</code> desde <code>${esc(r.results.ref)}</code> · ${ok} creada${ok === 1 ? "" : "s"}${fail ? ` · ${fail} con error` : ""}</div>
+      <div class="rel-results">${adHtml}${rowsHtml}</div>`;
+  }
 
   list.innerHTML = `
     <div class="rel-view">
@@ -3291,7 +3323,7 @@ function renderReleases() {
       <div class="rel-form">
         <label class="rel-field">
           <span class="rel-label">Versión</span>
-          <input type="text" id="rel-version" value="${esc(r.version)}" placeholder="p.ej. ${esc(suggestedReleaseVersion())}-mx" ${r.running ? "disabled" : ""} autocomplete="off" />
+          <input type="text" id="rel-version" value="${esc(r.version)}" placeholder="p.ej. ${esc(suggestedReleaseVersion())}" ${r.running ? "disabled" : ""} autocomplete="off" />
         </label>
         <label class="rel-field">
           <span class="rel-label">Rama origen</span>
@@ -3307,9 +3339,10 @@ function renderReleases() {
         <span>Proyectos <span class="rel-count" id="rel-sel-count">${selCount}/${projects.length}</span></span>
         <button class="btn ghost" id="rel-toggle-all" ${r.running ? "disabled" : ""}>${allOn ? "Ninguno" : "Todos"}</button>
       </div>
-      <div class="rel-projects">${rowsHtml}</div>
+      <div class="rel-projects ms-proj-filter">${chipsHtml || `<span class="muted">No se han podido cargar los proyectos del grupo.</span>`}</div>
 
-      ${summaryHtml}
+      ${appDateHtml}
+      ${resultsHtml}
 
       <div class="rel-actions">
         <button class="btn btn-primary" id="rel-generate" ${canRun ? "" : "disabled"}>${r.running ? "Generando…" : "Generar release branches"}</button>
@@ -3317,12 +3350,11 @@ function renderReleases() {
     </div>`;
 
   const versionInput = $("#rel-version");
-  const sourceInput = $("#rel-source");
   const preview = $("#rel-branch-preview");
   const genBtn = $("#rel-generate");
   const syncControls = () => {
     const v = releaseBranchValid(r.version);
-    const sel = projects.filter((p) => r.selected.has(String(p.id))).length;
+    const sel = projects.filter((p) => r.selected.has(p.path)).length;
     preview.textContent = `${prefix}${r.version || ""}`;
     preview.classList.toggle("invalid", !v);
     $("#rel-sel-count").textContent = `${sel}/${projects.length}`;
@@ -3332,24 +3364,31 @@ function renderReleases() {
     r.version = versionInput.value.trim();
     syncControls();
   });
-  sourceInput?.addEventListener("input", () => {
-    r.sourceBranch = sourceInput.value.trim();
+  $("#rel-source")?.addEventListener("input", (event) => {
+    r.sourceBranch = event.target.value.trim();
   });
-  list.querySelectorAll(".rel-proj-check").forEach((cb) =>
-    cb.addEventListener("change", () => {
-      const id = cb.dataset.id;
-      if (cb.checked) r.selected.add(id);
-      else r.selected.delete(id);
-      cb.closest(".rel-proj")?.classList.toggle("on", cb.checked);
-      syncControls();
+  // Clic en chip = alternar selección. Re-render (la visibilidad del panel AppDate depende de Ouicare).
+  list.querySelectorAll(".ms-proj-chip[data-path]").forEach((chip) =>
+    chip.addEventListener("click", () => {
+      const path = chip.dataset.path;
+      if (r.selected.has(path)) r.selected.delete(path);
+      else r.selected.add(path);
+      renderReleases();
     }),
   );
   $("#rel-toggle-all")?.addEventListener("click", () => {
     if (allOn) r.selected.clear();
-    else for (const p of projects) r.selected.add(String(p.id));
+    else for (const p of projects) r.selected.add(p.path);
     renderReleases();
   });
-  list.querySelectorAll(".rel-res[data-url]").forEach((a) =>
+  $("#rel-appdate-on")?.addEventListener("change", (event) => {
+    r.appDateEnabled = event.target.checked;
+    renderReleases();
+  });
+  $("#rel-appdate-date")?.addEventListener("change", (event) => {
+    r.appDate = event.target.value;
+  });
+  list.querySelectorAll(".rel-results a[data-url]").forEach((a) =>
     a.addEventListener("click", (event) => {
       event.preventDefault();
       if (a.dataset.url) window.pulpo.openExternal(a.dataset.url);
@@ -3367,20 +3406,22 @@ function confirmAndGenerateReleases() {
   const prefix = r.defaults.branchPrefix || "rb/";
   const branch = `${prefix}${r.version}`;
   const source = r.sourceBranch || r.defaults.sourceBranch || "development";
-  const targets = r.defaults.projects.filter((p) => r.selected.has(String(p.id)));
+  const targets = r.projects.filter((p) => r.selected.has(p.path));
   if (!targets.length) return;
-  const root = $("#modal-root");
-  const noteProjects = targets.filter((p) => p.note);
-  const notesHtml = noteProjects.length
-    ? `<div class="rel-confirm-notes">${noteProjects.map((p) => `<div class="rel-confirm-note">⚠️ <b>${esc(p.name)}</b>: ${esc(p.note)}</div>`).join("")}</div>`
+  const ouicarePath = r.defaults.ouicare?.projectPath || null;
+  const appDateOn = Boolean(ouicarePath && r.selected.has(ouicarePath) && r.appDateEnabled);
+  const appDateStr = isoToAppDate(r.appDate);
+  const noteHtml = appDateOn
+    ? `<div class="rel-confirm-notes"><div class="rel-confirm-note">📝 <b>Ouicare</b>: AppDate → <b>${esc(appDateStr)}</b> en <code>${esc(source)}</code> (commit a <code>${esc(r.defaults.ouicare.webConfigPath)}</code>) antes de ramificar.</div></div>`
     : "";
+  const root = $("#modal-root");
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal">
         <h3>Crear <code>${esc(branch)}</code> en ${targets.length} proyecto${targets.length === 1 ? "" : "s"}</h3>
         <p class="muted">Desde la rama <code>${esc(source)}</code>. Se aplica proyecto a proyecto (no atómico): si alguno falla, el resto sí se crea.</p>
-        <ul class="rel-confirm-list">${targets.map((p) => `<li>${esc(p.name || p.id)} <span class="muted">#${esc(String(p.id))}</span></li>`).join("")}</ul>
-        ${notesHtml}
+        <ul class="rel-confirm-list">${targets.map((p) => `<li>${esc(p.name)} <span class="muted">${esc(p.path)}</span></li>`).join("")}</ul>
+        ${noteHtml}
         <div class="modal-actions">
           <button class="btn" id="modal-cancel">Cancelar</button>
           <button class="btn btn-primary" id="modal-confirm">Crear ramas</button>
@@ -3404,8 +3445,13 @@ async function runReleaseGeneration() {
   r.results = null;
   renderReleases();
   try {
-    const projectIds = r.defaults.projects.map((p) => String(p.id)).filter((id) => r.selected.has(id));
-    r.results = await window.pulpo.generateReleaseBranches(r.version, r.sourceBranch, projectIds);
+    const projects = r.projects.filter((p) => r.selected.has(p.path)).map((p) => ({ id: p.path, name: p.name }));
+    const ouicarePath = r.defaults.ouicare?.projectPath || null;
+    const ouicare =
+      ouicarePath && r.selected.has(ouicarePath) && r.appDateEnabled
+        ? { enabled: true, date: isoToAppDate(r.appDate) }
+        : { enabled: false };
+    r.results = await window.pulpo.generateReleaseBranches({ version: r.version, sourceBranch: r.sourceBranch, projects, ouicare });
     const ok = r.results.results.filter((x) => x.ok).length;
     const fail = r.results.results.length - ok;
     toast(fail ? `${ok} creada(s), ${fail} con error` : `${ok} release branch(es) creada(s)`, fail ? "warn" : "ok");

@@ -1130,40 +1130,33 @@ body {
   margin: 22px 0 8px; font-weight: 600; font-size: 13px;
 }
 .rel-count { color: var(--text-muted); font-weight: 500; margin-left: 4px; }
-.rel-projects { display: flex; flex-direction: column; gap: 6px; }
-.rel-proj {
-  display: flex; align-items: center; gap: 10px; padding: 9px 12px;
-  border: 1px solid var(--border); border-radius: 9px; background: var(--bg-raised);
-  cursor: pointer; transition: border-color 0.12s, background 0.12s;
+/* Selector de proyectos: chips reutilizando .ms-proj-filter / .ms-proj-chip del filtro del resumen. */
+.rel-projects { margin-bottom: 4px; }
+
+/* AppDate de Ouicare (solo si Ouicare está seleccionado). */
+.rel-appdate {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
+  margin: 16px 0 4px; padding: 10px 12px; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--yellow-bg);
 }
-.rel-proj:hover { background: var(--bg-hover); }
-.rel-proj.on { border-color: var(--accent); }
-.rel-proj input[type="checkbox"] {
-  appearance: none; -webkit-appearance: none; margin: 0; flex-shrink: 0; cursor: pointer;
-  width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid var(--border);
-  position: relative; transition: background 0.12s, border-color 0.12s;
+.rel-appdate-toggle { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.rel-appdate-toggle input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+.rel-appdate input[type="date"] {
+  font: inherit; color: var(--text); background: var(--bg-raised);
+  border: 1px solid var(--border); border-radius: 7px; padding: 5px 8px;
 }
-.rel-proj input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
-.rel-proj input[type="checkbox"]:checked::after {
-  content: "✓"; position: absolute; inset: 0; color: #fff; font-size: 11px;
-  display: flex; align-items: center; justify-content: center;
-}
-.rel-proj-main { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
-.rel-proj-name { font-weight: 600; font-size: 13px; }
-.rel-proj-id { font-size: 11px; color: var(--text-muted); font-family: ui-monospace, Menlo, monospace; }
-.rel-proj-note { font-size: 11px; color: #bf8700; margin-left: auto; max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rel-res { margin-left: auto; font-size: 12px; font-weight: 600; flex-shrink: 0; }
-.rel-proj-note + .rel-res { margin-left: 10px; }
-.rel-res.ok { color: var(--green); text-decoration: none; }
-.rel-res.ok:hover { text-decoration: underline; }
-.rel-res.err { color: var(--red); max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rel-appdate .muted { flex-basis: 100%; }
 
 .rel-summary { margin: 18px 0 4px; padding: 10px 12px; border-radius: 9px; font-size: 13px; border: 1px solid var(--border); }
 .rel-summary.ok { background: var(--green-bg); border-color: var(--green); }
-.rel-summary.warn { background: #fff8e1; border-color: #bf8700; }
+.rel-summary.warn { background: var(--yellow-bg); border-color: var(--yellow); }
 .rel-summary.err { background: var(--red-bg); border-color: var(--red); }
+.rel-results { display: flex; flex-direction: column; gap: 3px; margin: 6px 0; font-size: 13px; }
+.rel-res-row.ok { color: var(--green); }
+.rel-res-row.err { color: var(--red); }
+.rel-res-row a { color: var(--accent); margin-left: 6px; }
 .rel-actions { margin-top: 22px; }
 
 .rel-confirm-list { margin: 10px 0; padding-left: 18px; font-size: 13px; line-height: 1.7; }
 .rel-confirm-notes { margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
-.rel-confirm-note { font-size: 12px; color: #bf8700; background: #fff8e1; padding: 6px 9px; border-radius: 7px; }
+.rel-confirm-note { font-size: 12px; color: var(--text); background: var(--yellow-bg); padding: 6px 9px; border-radius: 7px; }

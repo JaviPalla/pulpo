@@ -543,33 +543,62 @@ async function cherryPick(repoFullName, sha, branch, { dryRun = false } = {}) {
 
 /* ---------- releases (generar release branches rb/<version>) ---------- */
 
-// Proyectos configurados para la generación de release branches (set por defecto = los del
-// script legacy auto-rb-branches.py). Cada uno {id, name, note?}: id sirve como id de proyecto
-// para la API (vale id numérico o path codificado). El renderer elige cuáles ejecutar.
-function releaseProjects() {
-  const cfg = config.load();
-  return Array.isArray(cfg.releases?.projects) ? cfg.releases.projects : [];
-}
-
+// Valores por defecto de la generación de release branches. Los PROYECTOS ya NO se hardcodean:
+// el renderer los saca del grupo (groupProjects). Aquí solo van rama origen, prefijo y la config
+// de Ouicare (AppDate del Web.config), que es específica y no derivable del listado de proyectos.
 function releaseDefaults() {
   const cfg = config.load();
   return {
     sourceBranch: cfg.releases?.sourceBranch || "development",
     branchPrefix: cfg.releases?.branchPrefix || "rb/",
-    projects: releaseProjects(),
+    ouicare: cfg.releases?.ouicare || null,
   };
+}
+
+/**
+ * Actualiza la appSetting `AppDate` del Web.config de Ouicare (cache-buster del appcache: el valor
+ * alimenta el "App Markup Date" del CACHE MANIFEST, así que hay que bumpearlo en cada release) y la
+ * commitea en `sourceBranch` ANTES de crear la release branch — réplica del paso manual del script
+ * ("Change AppDate in Ouicare before creating branch"). `date` = "DDMMYYYY". Si ya vale eso, no
+ * commitea (GitLab rechaza commits sin cambios). NO lanza: devuelve {ok, skipped?, error?, date}.
+ */
+async function updateOuicareAppDate({ projectPath, webConfigPath, appDateKey }, sourceBranch, date) {
+  try {
+    if (!projectPath || !webConfigPath || !appDateKey) return { ok: false, error: "Ouicare sin configurar" };
+    const fileApi = `/projects/${proj(projectPath)}/repository/files/${encodeURIComponent(webConfigPath)}`;
+    const file = await api("GET", `${fileApi}?ref=${encodeURIComponent(sourceBranch)}`);
+    const content = Buffer.from(file.content, "base64").toString("utf8");
+    // <add key="AppDate" value="04022026"/> (comillas dobles, key antes que value, cierre con o sin espacio)
+    const re = new RegExp(`(<add\\s+key="${appDateKey}"\\s+value=")([^"]*)("\\s*/>)`, "i");
+    const m = content.match(re);
+    if (!m) return { ok: false, error: `No se encontró la clave ${appDateKey} en ${webConfigPath}` };
+    if (m[2] === date) return { ok: true, skipped: true, date, previous: m[2] };
+    const next = content.replace(re, `$1${date}$3`);
+    await api("POST", `/projects/${proj(projectPath)}/repository/commits`, {
+      branch: sourceBranch,
+      commit_message: `chore(ouicare): AppDate ${date} (release)`,
+      actions: [{ action: "update", file_path: webConfigPath, content: next }],
+    });
+    return { ok: true, date, previous: m[2] };
+  } catch (err) {
+    return { ok: false, error: String(err.message || err) };
+  }
 }
 
 /**
  * Crea la release branch `${branchPrefix}${version}` en cada proyecto pedido, a partir de
  * `sourceBranch` (POST repository/branches con {branch, ref}). Replica auto-rb-branches.py.
+ * `projects` = [{id,name}] donde id = path (o id numérico) del proyecto en el grupo. Si `ouicare`
+ * viene con {enabled,date,...}, antes de ramificar se actualiza el AppDate en la rama origen.
  * NO atómico entre N proyectos: se aplican en serie y se reporta por-proyecto {id,name,ok,error?,
  * webUrl?}; un fallo a medias deja unos creados y otros no (igual que cherryPick). El token NUNCA
  * se hardcodea (a diferencia del script legacy): sale de resolveToken. Solo GitLab.
  */
-async function generateReleaseBranches({ projects, version, sourceBranch }) {
+async function generateReleaseBranches({ projects, version, sourceBranch, ouicare }) {
   const branch = `${releaseDefaults().branchPrefix}${version}`;
   const ref = sourceBranch || releaseDefaults().sourceBranch;
+  // Paso previo: AppDate de Ouicare en la rama origen, para que la nueva rama ya lo herede.
+  const appDate = ouicare && ouicare.enabled ? await updateOuicareAppDate(ouicare, ref, ouicare.date) : null;
   const results = [];
   for (const p of projects || []) {
     try {
@@ -579,7 +608,7 @@ async function generateReleaseBranches({ projects, version, sourceBranch }) {
       results.push({ id: p.id, name: p.name || String(p.id), ok: false, branch, error: String(err.message || err) });
     }
   }
-  return { branch, ref, results };
+  return { branch, ref, appDate, results };
 }
 
 /** GitLab revierte creando un commit directo en la rama destino (no abre MR). */
@@ -709,8 +738,10 @@ async function groupProjects() {
   const projects = await apiAll(`/groups/${encodeURIComponent(group)}/projects?include_subgroups=true`);
   return Promise.all(
     projects.map(async (p) => ({
+      id: p.id,
       path: p.path_with_namespace,
       name: p.name,
+      archived: Boolean(p.archived),
       icon: p.avatar_url ? await fetchAvatarDataUri(p.avatar_url) : null,
     })),
   );
