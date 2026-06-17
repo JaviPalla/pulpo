@@ -57,6 +57,16 @@ function createWindow() {
   });
 }
 
+// rootDir efectivo (config, o ~/repositories bajo selftest para la captura) + valida que `dir`
+// cuelgue de él. Seguridad: el renderer nunca puede pedir una ruta arbitraria fuera del raíz.
+function localRootGuard(dir) {
+  const root = config.load().local.rootDir || (SELFTEST ? path.join(app.getPath("home"), "repositories") : null);
+  if (!root || !dir || !path.resolve(dir).startsWith(path.resolve(root) + path.sep)) {
+    throw new Error("Ruta fuera del directorio raíz configurado");
+  }
+  return root;
+}
+
 function wireIpc() {
   ipcMain.handle("auth:status", async () => {
     const { token, source } = gh().resolveToken();
@@ -183,12 +193,36 @@ function wireIpc() {
     return { rootDir, repos: repos.map((r) => ({ ...r, known: r.gitlabPath ? known.has(r.gitlabPath) : false })) };
   });
   ipcMain.handle("local:repoInfo", async (_event, { dir }) => {
-    // Seguridad: solo dentro del rootDir configurado, nunca una ruta arbitraria del renderer.
-    const root = config.load().local.rootDir || (SELFTEST ? path.join(app.getPath("home"), "repositories") : null);
-    if (!root || !dir || !path.resolve(dir).startsWith(path.resolve(root) + path.sep)) {
-      throw new Error("Ruta fuera del directorio raíz configurado");
-    }
+    localRootGuard(dir);
     return local.repoInfo(dir);
+  });
+  // Propuesta IA (título + descripción + checklist) desde el diff de la rama local vs la rama destino.
+  ipcMain.handle("local:proposeTask", async (_event, { dir, sourceBranch, targetBranch, repoName }) => {
+    localRootGuard(dir);
+    const diffText = await local.branchDiff(dir, targetBranch, sourceBranch);
+    return ai.proposeTask({ diffText, repoName, branch: sourceBranch });
+  });
+  // Orquesta el flujo Crear tarea (single-project): push de la rama → crea Issue → crea MR (Closes #iid).
+  // Secuencial y NO atómico: si falla la MR tras crear la issue, la issue queda creada (se reporta).
+  ipcMain.handle("local:createTask", async (_event, { dir, projectPath, sourceBranch, targetBranch, title, description, checklist, labels, push }) => {
+    localRootGuard(dir);
+    const branchRe = /^[\w./-]{1,200}$/;
+    const projRe = /^[\w.-]+(\/[\w.-]+)*$/;
+    if (!projRe.test(projectPath || "")) throw new Error("Proyecto no válido");
+    if (!branchRe.test(sourceBranch || "") || !branchRe.test(targetBranch || "")) throw new Error("Rama no válida");
+    if (!title || !String(title).trim()) throw new Error("El título es obligatorio");
+    const checkItems = (Array.isArray(checklist) ? checklist : []).filter((c) => typeof c === "string" && c.trim());
+    const checklistMd = checkItems.length ? `\n\n## Puntos a comprobar\n${checkItems.map((c) => `- [ ] ${c.trim()}`).join("\n")}` : "";
+    const safeLabels = (Array.isArray(labels) ? labels : []).filter((l) => typeof l === "string" && l.trim());
+    const pushResult = push ? await local.pushBranch(dir, sourceBranch) : null;
+    const issue = await gh().createIssue(projectPath, { title: String(title).trim(), description: `${description || ""}${checklistMd}`, labels: safeLabels });
+    const mr = await gh().createMergeRequest(projectPath, {
+      sourceBranch,
+      targetBranch,
+      title: String(title).trim(),
+      description: `Closes #${issue.iid}\n\n${description || ""}${checklistMd}`,
+    });
+    return { push: pushResult, issue, mr };
   });
 
   ipcMain.handle("prs:list", async (_event, { repo, states }) => gh().listPRs(repo, states));

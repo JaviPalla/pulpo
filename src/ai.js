@@ -342,6 +342,53 @@ async function summarizeMilestone({ milestoneTitle, items }) {
   return { items: result, backend, model, effort };
 }
 
+/* ---------- propuesta de tarea (Trabajo local → GitLab) ---------- */
+
+const TASK_SCHEMA = {
+  type: "object",
+  properties: {
+    title: { type: "string", description: "Título conciso de la tarea, en español (estilo issue)." },
+    description: { type: "string", description: "Descripción en español (markdown) de qué hace el cambio y por qué." },
+    checklist: {
+      type: "array",
+      items: { type: "string", description: "Un punto a comprobar/validar del flujo introducido, en español." },
+      description: "Puntos a comprobar del flujo (QA). Entre 2 y 8.",
+    },
+  },
+  required: ["title", "description", "checklist"],
+  additionalProperties: false,
+};
+
+function buildTaskPrompt({ diffText, repoName, branch, truncated }) {
+  return `Eres un ingeniero senior preparando una tarea (issue) y su merge request en GitLab a partir de un cambio ya desarrollado en local.
+
+Te paso el diff de la rama "${branch}" del repo "${repoName}". A partir de él:
+- "title": un título conciso y claro en ESPAÑOL para la issue.
+- "description": una descripción en ESPAÑOL (markdown) que explique QUÉ cambia y POR QUÉ, para que un revisor lo entienda sin leer todo el diff.
+- "checklist": entre 2 y 8 PUNTOS A COMPROBAR del flujo introducido (QA), en ESPAÑOL, concretos y verificables (no genéricos).
+${truncated ? "- Nota: el diff se truncó por longitud; tenlo en cuenta.\n" : ""}
+Responde SOLO con un objeto JSON con esta forma (sin prosa ni cercos):
+{"title": string, "description": string, "checklist": [string]}
+
+# Diff
+${diffText || "(sin diff disponible: infiere lo que puedas del nombre de la rama)"}`;
+}
+
+// Genera título + descripción + checklist para una tarea a partir del diff de una rama local.
+async function proposeTask({ diffText, repoName, branch }) {
+  const truncated = (diffText || "").length > MAX_DIFF_CHARS;
+  const prompt = buildTaskPrompt({ diffText: (diffText || "").slice(0, MAX_DIFF_CHARS), repoName, branch, truncated });
+  const { data, backend, model, effort } = await runStructured(prompt, TASK_SCHEMA);
+  return {
+    title: typeof data.title === "string" ? data.title.trim() : "",
+    description: typeof data.description === "string" ? data.description : "",
+    checklist: (Array.isArray(data.checklist) ? data.checklist : []).filter((x) => typeof x === "string" && x.trim()).slice(0, 8),
+    backend,
+    model,
+    effort,
+  };
+}
+
 /** Estado del backend de IA, para onboarding y ajustes. */
 function backendStatus() {
   const { model, effort } = aiSettings();
@@ -397,4 +444,4 @@ function isAiEffort(level) {
   return ALL_EFFORTS.includes(level);
 }
 
-module.exports = { generateReview, summarizeMilestone, backendStatus, ping, isAiModel, isAiEffort };
+module.exports = { generateReview, summarizeMilestone, proposeTask, backendStatus, ping, isAiModel, isAiEffort };

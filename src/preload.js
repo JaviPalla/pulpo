@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("pulpo", {
   localPickRoot: () => ipcRenderer.invoke("local:pickRoot"),
   localRepos: () => ipcRenderer.invoke("local:repos"),
   localRepoInfo: (dir) => ipcRenderer.invoke("local:repoInfo", { dir }),
+  localProposeTask: (payload) => ipcRenderer.invoke("local:proposeTask", payload),
+  localCreateTask: (payload) => ipcRenderer.invoke("local:createTask", payload),
   listPRs: (repo, states) => ipcRenderer.invoke("prs:list", { repo, states }),
   searchPRs: (repos, states) => ipcRenderer.invoke("prs:search", { repos, states }),
   prDetail: (repo, number) => ipcRenderer.invoke("pr:detail", { repo, number }),

@@ -37,7 +37,8 @@ const state = {
   // Vista de Trabajo local (solo GitLab, OPE-19): publica trabajo de ramas/worktrees locales como
   // Issues/Epics + MRs. `tab`: "crear" (Issue/Epic nuevos) | "vincular" (a una tarea existente).
   // `rootDir` = directorio raíz donde conviven los clones; `repos` = lo escaneado por local:repos.
-  local: { tab: "crear", rootDir: null, repos: [], loading: false, info: {} },
+  // `form` = formulario de "Crear tarea" abierto para un repo (null = listado). Ver openLocalForm.
+  local: { tab: "crear", rootDir: null, repos: [], loading: false, info: {}, form: null },
   prSnapshot: null, // nº → {reviewDecision, checks, reviewMe} para detectar cambios y notificar
   cursor: -1, // selección con teclado (j/k) en la lista
   draftKeys: new Set(), // "owner/repo#n" con borradores guardados → badge 📝 en la lista
@@ -3583,6 +3584,7 @@ function renderLocal() {
     list.innerHTML = `<div class="loading">Escaneando repos locales…</div>`;
     return;
   }
+  if (l.form) return renderLocalForm();
   const isCrear = l.tab === "crear";
   const desc = isCrear
     ? "Elige repo y rama/worktree de tu local para crear una <b>Issue/Epic</b> nueva y su <b>MR</b>."
@@ -3606,6 +3608,7 @@ function renderLocal() {
   }
 
   const repos = l.repos || [];
+  // En "crear" solo tienen sentido los repos casados con GitLab (hay que crear Issue/MR en su proyecto).
   const cards = repos
     .map((r) => {
       const info = l.info[r.dir] || {};
@@ -3619,16 +3622,22 @@ function renderLocal() {
         : `<span class="local-cur">⎇ ${esc(info.current || "—")}</span>
            ${info.dirty ? `<span class="local-dirty" title="Cambios sin commitear">● sucio</span>` : ""}
            <span class="local-count">${(info.branches || []).length} ramas · ${(info.worktrees || []).length} worktrees</span>`;
+      const clickable = isCrear && r.gitlabPath;
       return `
-        <div class="local-repo">
+        <div class="local-repo ${clickable ? "clickable" : ""}" ${clickable ? `data-dir="${esc(r.dir)}"` : ""} ${clickable ? 'title="Crear tarea desde este repo"' : ""}>
           <div class="local-repo-top">
             <span class="local-name">${esc(r.name)}</span>
             ${badge}
+            ${clickable ? `<span class="local-go">Crear tarea →</span>` : ""}
           </div>
           <div class="local-repo-meta">${meta}</div>
         </div>`;
     })
     .join("");
+
+  const vincularNote = isCrear
+    ? ""
+    : `<div class="local-soon">El flujo de <b>vincular</b> a una Issue/Epic existente llega en la siguiente fase. De momento puedes ver tus repos locales aquí.</div>`;
 
   list.innerHTML =
     head +
@@ -3636,9 +3645,229 @@ function renderLocal() {
       <span class="local-root-path" title="${esc(l.rootDir)}">📁 ${esc(l.rootDir)}</span>
       <button class="btn local-change" id="local-pick">Cambiar…</button>
     </div>
+    ${vincularNote}
     ${repos.length ? `<div class="local-repos">${cards}</div>` : `<div class="local-empty"><p>No se han encontrado repos git directamente bajo ese directorio.</p></div>`}`;
   $("#local-pick")?.addEventListener("click", pickLocalRoot);
+  list.querySelectorAll(".local-repo.clickable").forEach((el) =>
+    el.addEventListener("click", () => openLocalForm(el.dataset.dir)),
+  );
   notifySelftestOnce();
+}
+
+// Abre el formulario "Crear tarea" para el repo en `dir`. Siembra rama origen (la actual) y destino.
+function openLocalForm(dir) {
+  const l = state.local;
+  const repo = (l.repos || []).find((r) => r.dir === dir);
+  if (!repo) return;
+  const info = l.info[dir] || {};
+  l.form = {
+    repo,
+    info,
+    sourceBranch: info.current || (info.branches?.[0]?.name ?? ""),
+    targetBranch: "development",
+    title: "",
+    description: "",
+    checklist: "",
+    mode: "ia", // "ia" | "manual"
+    push: true,
+    aiLoading: false,
+    creating: false,
+    result: null,
+    error: null,
+  };
+  renderLocal();
+}
+
+function closeLocalForm() {
+  state.local.form = null;
+  renderLocal();
+}
+
+// Lee los campos editables del DOM al estado (antes de re-render o de crear).
+function syncLocalForm() {
+  const f = state.local.form;
+  if (!f) return;
+  f.sourceBranch = $("#lf-source")?.value ?? f.sourceBranch;
+  f.targetBranch = ($("#lf-target")?.value ?? f.targetBranch).trim();
+  f.title = $("#lf-title")?.value ?? f.title;
+  f.description = $("#lf-desc")?.value ?? f.description;
+  f.checklist = $("#lf-checklist")?.value ?? f.checklist;
+  f.push = $("#lf-push") ? $("#lf-push").checked : f.push;
+}
+
+function renderLocalForm() {
+  const f = state.local.form;
+  const branches = f.info.branches || [];
+  const branchOpts = branches.length
+    ? branches.map((b) => `<option value="${esc(b.name)}" ${b.name === f.sourceBranch ? "selected" : ""}>${esc(b.name)}</option>`).join("")
+    : `<option value="${esc(f.sourceBranch)}">${esc(f.sourceBranch || "—")}</option>`;
+
+  if (f.result) return renderLocalResult();
+
+  list.innerHTML = `
+    <div class="local-head">
+      <h2>Crear tarea · ${esc(f.repo.name)}</h2>
+      <p class="local-desc">${esc(f.repo.gitlabPath)} — se creará una <b>Issue</b> y una <b>MR</b> con tu rama local.</p>
+    </div>
+    <div class="lf">
+      <div class="lf-row">
+        <label>Rama origen
+          <select id="lf-source">${branchOpts}</select>
+        </label>
+        <label>Rama destino
+          <input id="lf-target" type="text" value="${esc(f.targetBranch)}" placeholder="development" />
+        </label>
+      </div>
+      <div class="lf-mode">
+        <span>Contenido:</span>
+        <button class="lf-chip ${f.mode === "ia" ? "on" : ""}" id="lf-mode-ia">✨ Generar con IA</button>
+        <button class="lf-chip ${f.mode === "manual" ? "on" : ""}" id="lf-mode-manual">✍️ A mano</button>
+        ${f.mode === "ia" ? `<button class="btn" id="lf-suggest" ${f.aiLoading ? "disabled" : ""}>${f.aiLoading ? "Generando…" : "Sugerir con IA"}</button>` : ""}
+      </div>
+      ${f.error ? `<div class="error-box">${esc(f.error)}</div>` : ""}
+      <label class="lf-field">Título
+        <input id="lf-title" type="text" value="${esc(f.title)}" placeholder="Título de la tarea" />
+      </label>
+      <label class="lf-field">Descripción
+        <textarea id="lf-desc" rows="5" placeholder="Qué cambia y por qué (markdown)">${esc(f.description)}</textarea>
+      </label>
+      <label class="lf-field">Puntos a comprobar <span class="muted">(uno por línea)</span>
+        <textarea id="lf-checklist" rows="5" placeholder="- Verificar que…">${esc(f.checklist)}</textarea>
+      </label>
+      <label class="lf-check"><input type="checkbox" id="lf-push" ${f.push ? "checked" : ""} /> Hacer push de la rama a origin antes de crear la MR</label>
+      <div class="lf-actions">
+        <button class="btn" id="lf-cancel">← Volver</button>
+        <button class="btn btn-primary" id="lf-create" ${f.creating ? "disabled" : ""}>${f.creating ? "Creando…" : "Crear Issue + MR"}</button>
+      </div>
+    </div>`;
+
+  $("#lf-cancel").addEventListener("click", closeLocalForm);
+  $("#lf-mode-ia").addEventListener("click", () => { syncLocalForm(); f.mode = "ia"; renderLocal(); });
+  $("#lf-mode-manual").addEventListener("click", () => { syncLocalForm(); f.mode = "manual"; renderLocal(); });
+  $("#lf-suggest")?.addEventListener("click", suggestLocalTask);
+  $("#lf-create").addEventListener("click", confirmCreateLocalTask);
+  notifySelftestOnce();
+}
+
+async function suggestLocalTask() {
+  const f = state.local.form;
+  syncLocalForm();
+  f.aiLoading = true;
+  f.error = null;
+  renderLocal();
+  try {
+    const out = await window.pulpo.localProposeTask({
+      dir: f.repo.dir,
+      repoName: f.repo.gitlabPath || f.repo.name,
+      sourceBranch: f.sourceBranch,
+      targetBranch: f.targetBranch,
+    });
+    f.title = out.title || f.title;
+    f.description = out.description || f.description;
+    if (Array.isArray(out.checklist) && out.checklist.length) f.checklist = out.checklist.map((c) => `- ${c}`).join("\n");
+  } catch (err) {
+    f.error = `IA: ${String(err.message || err)}`;
+  } finally {
+    f.aiLoading = false;
+    renderLocal();
+  }
+}
+
+function confirmCreateLocalTask() {
+  const f = state.local.form;
+  syncLocalForm();
+  if (!f.title.trim()) { f.error = "El título es obligatorio."; renderLocal(); return; }
+  const root = $("#modal-root");
+  root.innerHTML = `
+    <div class="modal-backdrop" id="modal-backdrop">
+      <div class="modal">
+        <h3>↗ Crear tarea en GitLab</h3>
+        <p class="muted">En <b>${esc(f.repo.gitlabPath)}</b> se creará una <b>Issue</b> y una <b>MR</b> <code>${esc(f.sourceBranch)} → ${esc(f.targetBranch)}</code>${f.push ? ", tras <b>pushear</b> la rama" : ""}. Acción irreversible.</p>
+        <div class="modal-actions">
+          <button class="btn" id="modal-cancel">Cancelar</button>
+          <button class="btn btn-primary" id="modal-confirm">Crear en GitLab</button>
+        </div>
+      </div>
+    </div>`;
+  $("#modal-cancel").addEventListener("click", () => (root.innerHTML = ""));
+  $("#modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "modal-backdrop") root.innerHTML = ""; });
+  $("#modal-confirm").addEventListener("click", () => { root.innerHTML = ""; createLocalTask(); });
+}
+
+async function createLocalTask() {
+  const f = state.local.form;
+  f.creating = true;
+  f.error = null;
+  renderLocal();
+  try {
+    const checklist = f.checklist.split("\n").map((s) => s.replace(/^\s*[-*]\s?/, "").trim()).filter(Boolean);
+    f.result = await window.pulpo.localCreateTask({
+      dir: f.repo.dir,
+      projectPath: f.repo.gitlabPath,
+      sourceBranch: f.sourceBranch,
+      targetBranch: f.targetBranch,
+      title: f.title.trim(),
+      description: f.description,
+      checklist,
+      push: f.push,
+    });
+    toast("Issue + MR creadas ✓", "ok");
+  } catch (err) {
+    f.error = String(err.message || err);
+    toast("Error al crear la tarea", "err");
+  } finally {
+    f.creating = false;
+    renderLocal();
+  }
+}
+
+function renderLocalResult() {
+  const f = state.local.form;
+  const { issue, mr } = f.result;
+  list.innerHTML = `
+    <div class="local-head">
+      <h2>✓ Tarea creada</h2>
+      <p class="local-desc">${esc(f.repo.gitlabPath)}</p>
+    </div>
+    <div class="lf-result">
+      <div class="lf-result-card">
+        <span class="lf-result-k">Issue</span>
+        <a href="${esc(issue.url)}" class="lf-result-link" data-ext>#${esc(String(issue.iid))} · ${esc(issue.title)}</a>
+      </div>
+      <div class="lf-result-card">
+        <span class="lf-result-k">Merge Request</span>
+        <a href="${esc(mr.url)}" class="lf-result-link" data-ext>!${esc(String(mr.number))} · ${esc(mr.title)}</a>
+      </div>
+      <div class="lf-actions">
+        <button class="btn" id="lf-again">Crear otra</button>
+        <button class="btn btn-accent" id="lf-openmr">Ver MR en Pulpo</button>
+      </div>
+    </div>`;
+  list.querySelectorAll("a[data-ext]").forEach((a) =>
+    a.addEventListener("click", (e) => { e.preventDefault(); window.pulpo.openExternal(a.getAttribute("href")); }),
+  );
+  $("#lf-again").addEventListener("click", () => openLocalForm(f.repo.dir));
+  $("#lf-openmr").addEventListener("click", () => openLocalMrInPulpo(mr));
+  notifySelftestOnce();
+}
+
+// Deep-link interno: salta a la vista de MRs del repo de la MR creada y abre su detalle.
+async function openLocalMrInPulpo(mr) {
+  state.local.form = null;
+  state.view = "prs";
+  state.bucket = "open";
+  document.querySelectorAll(".bucket").forEach((b) => b.classList.remove("active"));
+  document.querySelector('[data-bucket="open"]')?.classList.add("active");
+  if (state.config.repos.includes(mr.projectPath)) {
+    state.repo = mr.projectPath;
+    renderRepoSelect();
+  }
+  await refresh();
+  try {
+    await openDetail(mr.number, "conv", mr.projectPath);
+  } catch {
+    toast("Abre la MR desde la lista (puede tardar en aparecer)", "");
+  }
 }
 
 /* ============ arranque ============ */
@@ -3712,7 +3941,23 @@ async function boot() {
   if (IS_SELFTEST && SELFTEST_ROUTE === "milestones") enterMilestones();
   if (IS_SELFTEST && SELFTEST_ROUTE === "milestones-summary") runMilestonesSummarySelftest();
   if (IS_SELFTEST && SELFTEST_ROUTE === "releases") enterReleases();
-  if (IS_SELFTEST && SELFTEST_ROUTE === "local") enterLocal("crear");
+  if (IS_SELFTEST && SELFTEST_ROUTE === "local") runLocalSelftest();
+}
+
+// Selftest de Trabajo local: abre la pestaña Crear y el formulario del primer repo casado, para
+// capturar el form (no dispara IA ni creación real). Suprime el notify temprano hasta tenerlo pintado.
+async function runLocalSelftest() {
+  state.selftestNotified = true;
+  try {
+    await enterLocal("crear");
+    const first = (state.local.repos || []).find((r) => r.gitlabPath);
+    if (first) openLocalForm(first.dir);
+  } catch (err) {
+    console.error("[selftest] local failed:", err);
+  } finally {
+    state.selftestNotified = false;
+    notifySelftestOnce();
+  }
 }
 
 // Selftest E2E del resumen: abre Milestones, cambia a la pestaña Resumen, dispara la generación

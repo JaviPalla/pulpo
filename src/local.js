@@ -17,6 +17,7 @@ const fs = require("fs");
 const path = require("path");
 
 const pexec = promisify(execFile);
+const BRANCH_RE = /^[\w./-]{1,200}$/;
 
 async function git(cwd, args) {
   const { stdout } = await pexec("git", args, { cwd, timeout: 10000, maxBuffer: 4 * 1024 * 1024 });
@@ -99,7 +100,29 @@ async function repoInfo(dir) {
   return { current, branches, worktrees, dirty };
 }
 
-module.exports = { scanRepos, repoInfo, remotePath, parseWorktrees, parseBranches };
+// Empuja una rama local al remote origin (reutiliza las credenciales git del usuario: ssh/https).
+// `-u` deja el upstream listo. Devuelve la salida de git por si interesa mostrarla.
+async function pushBranch(dir, branch) {
+  if (!BRANCH_RE.test(branch || "")) throw new Error(`Nombre de rama no válido: ${branch}`);
+  const { stdout, stderr } = await pexec("git", ["push", "-u", "origin", branch], { cwd: dir, timeout: 120000, maxBuffer: 4 * 1024 * 1024 });
+  return { ok: true, output: (stderr || stdout || "").trim() };
+}
+
+// Diff de los commits que `branch` tiene y `target` no (target...branch), para alimentar a la IA.
+// Si target no existe en local, intenta origin/<target>; si tampoco, devuelve "" (la IA recibe poco).
+async function branchDiff(dir, target, branch) {
+  for (const base of [target, `origin/${target}`]) {
+    try {
+      const out = await git(dir, ["diff", `${base}...${branch}`]);
+      if (out.trim()) return out;
+    } catch {
+      /* base inexistente: probamos el siguiente */
+    }
+  }
+  return "";
+}
+
+module.exports = { scanRepos, repoInfo, remotePath, parseWorktrees, parseBranches, pushBranch, branchDiff };
 
 // Auto-verificación: `node src/local.js [dir]` (dir por defecto = el padre de este repo).
 if (require.main === module) {

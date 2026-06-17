@@ -773,6 +773,31 @@ async function updateIssue(projectId, iid, patch) {
   return mapIssue(updated);
 }
 
+// Crea una issue en un proyecto. Devuelve {iid, projectPath, url, title} (forma mínima que consume
+// el flujo de Trabajo local; no normaliza a la forma de PR porque una issue no es una MR).
+async function createIssue(repoFullName, { title, description, labels }) {
+  const body = { title };
+  if (description) body.description = description;
+  if (labels?.length) body.labels = labels.join(",");
+  const issue = await api("POST", `/projects/${proj(repoFullName)}/issues`, body);
+  return { iid: issue.iid, projectPath: repoFullName, url: issue.web_url, title: issue.title };
+}
+
+// Crea una Merge Request sourceBranch -> targetBranch. squash:false y remove_source_branch:false
+// por decisión de producto (merge = merge commit, nunca squash). Devuelve forma mínima para que el
+// renderer pueda enlazar a la vista de MRs (projectPath + number) y abrir el web_url.
+async function createMergeRequest(repoFullName, { sourceBranch, targetBranch, title, description, removeSourceBranch = false }) {
+  const mr = await api("POST", `/projects/${proj(repoFullName)}/merge_requests`, {
+    source_branch: sourceBranch,
+    target_branch: targetBranch,
+    title,
+    description: description || "",
+    squash: false,
+    remove_source_branch: Boolean(removeSourceBranch),
+  });
+  return { number: mr.iid, projectPath: repoFullName, url: mr.web_url, title: mr.title };
+}
+
 // Las Epics viven como issues en el proyecto "epics" del grupo: las detectamos por el último
 // segmento del path del proyecto en su URL.
 // ponytail: nombre de proyecto "epics" hardcodeado; si vuestra instancia lo llama distinto,
@@ -924,6 +949,8 @@ module.exports = {
   groupLabels,
   groupProjects,
   updateIssue,
+  createIssue,
+  createMergeRequest,
   collapseMilestoneEpics,
   releaseDefaults,
   generateReleaseBranches,

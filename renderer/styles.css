@@ -1177,3 +1177,27 @@ body {
 .local-cur { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .local-dirty { color: var(--accent); }
 .local-err { color: var(--red); }
+.local-repo.clickable { cursor: pointer; }
+.local-repo.clickable:hover { border-color: var(--accent); background: var(--bg-hover); }
+.local-go { margin-left: auto; font-size: 12px; color: var(--accent); }
+.local-soon { margin: 8px 20px; padding: 10px 14px; font-size: 13px; color: var(--text-muted); background: var(--bg-raised); border: 1px dashed var(--border); border-radius: 9px; }
+
+/* Formulario Crear tarea */
+.lf { margin: 8px 20px 28px; display: flex; flex-direction: column; gap: 14px; max-width: 760px; }
+.lf-row { display: flex; gap: 14px; }
+.lf-row label, .lf-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--text-muted); flex: 1; }
+.lf select, .lf input[type="text"], .lf textarea {
+  font: inherit; font-size: 13px; color: var(--text); background: var(--bg-raised);
+  border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; width: 100%; box-sizing: border-box;
+}
+.lf textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.lf-mode { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
+.lf-chip { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-raised); color: var(--text-muted); cursor: pointer; }
+.lf-chip.on { border-color: var(--accent); color: var(--accent); background: var(--bg-hover); }
+.lf-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
+.lf-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+.lf-result { margin: 8px 20px 28px; display: flex; flex-direction: column; gap: 12px; max-width: 620px; }
+.lf-result-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px; }
+.lf-result-k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); min-width: 110px; }
+.lf-result-link { color: var(--accent); text-decoration: none; font-size: 14px; }
+.lf-result-link:hover { text-decoration: underline; }
