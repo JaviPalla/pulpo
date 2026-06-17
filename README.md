@@ -5,9 +5,9 @@
 <h1 align="center">🐙 Pulpo</h1>
 
 <p align="center">
-  <b>Cliente de GitHub y GitLab para Mac centrado en pull/merge requests.</b><br/>
-  Listado estilo Bitbucket · diffs y comentarios nativos · grafo de ramas · borradores de review.<br/>
-  <i>A macOS GitHub &amp; GitLab PR/MR client: Bitbucket-style list, native diffs &amp; review drafts, branch graph.</i>
+  <b>Cliente de GitHub y GitLab para Mac para pull/merge requests <i>y gestión de tareas</i>.</b><br/>
+  Listado estilo Bitbucket · diffs y comentarios nativos · grafo de ramas · borradores de review · tablero de milestones por persona.<br/>
+  <i>A macOS GitHub &amp; GitLab PR/MR client: Bitbucket-style list, native diffs &amp; review drafts, branch graph, per-assignee milestone board.</i>
 </p>
 
 ---
@@ -51,6 +51,19 @@ No configurables. A propósito.
 - **Acciones de PR** — *Update branch (rebase)* y *Merge (merge commit)* con confirmación y
   borrado opcional de la rama. El merge se deshabilita solo (conflictos, checks, rama atrasada)
   explicando el motivo.
+- **Tablero de tareas por persona (Milestones)** 📋 *(solo GitLab)* — gestión de proyecto sobre un
+  milestone de grupo: sus *issues* agrupados por **integrante**, una columna por persona (un issue
+  con varios asignados aparece en cada uno). Pestañas arriba para cambiar de milestone. **Selección
+  múltiple** (checkbox por tarea) para editar etiquetas o mover issues de milestone **en bloque**;
+  **arrastrar y soltar** para reasignar tareas entre personas (conservando co-asignados) o soltarlas
+  sobre un milestone para moverlas. Edición con **todas las etiquetas del grupo** (colores reales).
+  **Métricas de avance** por persona y por milestone — *Terminadas* y *Comprobadas*, calculadas
+  sobre las tareas asignadas — y **filtros de estado** tri-estado (solo estas · ocultar · sin
+  filtro) con su explicación animada. Toggles para mostrar cerradas o sin asignar.
+- **Cherry-pick de hotfix** 🍒 *(solo GitLab)* — al fusionar una MR cuya rama de origen empieza por
+  `hotfix/`, Pulpo ofrece **replicar el cambio** (cherry-pick del commit de merge) a otras ramas
+  configuradas y a la rama hermana `-mx` de la *release*, con un *dry-run* por rama (✓/✗) antes de
+  confirmar. Nunca se dispara solo.
 - **Notificaciones nativas** 🔔 — te avisa cuando te piden review, cuando tu PR es aprobada o le
   piden cambios, y cuando sus checks se ponen en rojo. El Dock muestra cuántas PRs esperan tu
   review.
@@ -62,7 +75,7 @@ No configurables. A propósito.
 ## Puesta en marcha (2 minutos)
 
 ```bash
-git clone https://github.com/JesusGR4/pulpo && cd pulpo
+git clone https://github.com/JaviPalla/pulpo && cd pulpo
 npm install
 npm run doctor   # te dice exactamente qué falta y cómo arreglarlo
 npm start
@@ -113,10 +126,10 @@ npx electron-packager . Pulpo --platform=darwin --arch=arm64 --icon=build/icon.i
 ## Arquitectura
 
 ```
-src/main.js      ventana, IPC (enrutado por proveedor), notificaciones, selftest (--selftest[-route=list|changes|history])
+src/main.js      ventana, IPC (enrutado por proveedor), notificaciones, selftest (--selftest[-route=list|changes|history|milestones])
 src/provider.js  router GitHub/GitLab según config.provider
 src/github.js    GitHub: GraphQL (listado/detalle/grafo/update-branch) + REST (merge, diff, reviews)
-src/gitlab.js    GitLab: REST v4 (MR→forma PR); gitlab.com y self-hosted
+src/gitlab.js    GitLab: REST v4 (MR→forma PR); milestones/issues, labels, cherry-pick; gitlab.com y self-hosted
 src/ai.js        review con IA: SDK de Anthropic o CLI de Claude Code, siempre como borradores
 src/drafts.js    borradores locales (userData/drafts.json)
 src/config.js    repos, polling, token manual opcional
