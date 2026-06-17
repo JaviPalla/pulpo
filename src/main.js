@@ -67,6 +67,30 @@ function localRootGuard(dir) {
   return root;
 }
 
+// Prepara la rama de una MR en un repo local: (opcional) crea una rama feature desde la actual,
+// commitea los cambios sin commitear con `commitMessage` + el "#<iid>" de la issue al final (para que
+// el commit quede linkado en GitLab) y hace push. Devuelve {branch, commit:{sha,url}|null}.
+async function prepareLocalBranch(dir, projectPath, { sourceBranch, newBranch, commitMessage, issueIid, push }) {
+  const branchRe = /^[\w./-]{1,200}$/;
+  let branch = sourceBranch;
+  if (newBranch) {
+    if (!branchRe.test(newBranch)) throw new Error("Nombre de rama nueva no válido");
+    await local.createLocalBranch(dir, newBranch);
+    branch = newBranch;
+  }
+  let commit = null;
+  if (commitMessage && String(commitMessage).trim()) {
+    const msg = issueIid ? `${String(commitMessage).trim()}\n\n#${issueIid}` : String(commitMessage).trim();
+    commit = await local.commitAll(dir, msg); // null si no había cambios que commitear
+    if (commit) {
+      const base = (config.load().gitlabBaseUrl || "").replace(/\/+$/, "");
+      commit.url = `${base}/${projectPath}/-/commit/${commit.sha}`;
+    }
+  }
+  if (push) await local.pushBranch(dir, branch);
+  return { branch, commit };
+}
+
 function wireIpc() {
   ipcMain.handle("auth:status", async () => {
     const { token, source } = gh().resolveToken();
@@ -196,15 +220,16 @@ function wireIpc() {
     localRootGuard(dir);
     return local.repoInfo(dir);
   });
-  // Propuesta IA (título + descripción + checklist) desde el diff de la rama local vs la rama destino.
+  // Propuesta IA (título + descripción + checklist + mensaje de commit). Usa el diff de los cambios
+  // SIN commitear (lo que se va a commitear); si no hay, cae al diff de la rama vs destino.
   ipcMain.handle("local:proposeTask", async (_event, { dir, sourceBranch, targetBranch, repoName }) => {
     localRootGuard(dir);
-    const diffText = await local.branchDiff(dir, targetBranch, sourceBranch);
+    const diffText = (await local.workingDiff(dir)) || (await local.branchDiff(dir, targetBranch, sourceBranch));
     return ai.proposeTask({ diffText, repoName, branch: sourceBranch });
   });
-  // Orquesta el flujo Crear tarea (single-project): push de la rama → crea Issue → crea MR (Closes #iid).
-  // Secuencial y NO atómico: si falla la MR tras crear la issue, la issue queda creada (se reporta).
-  ipcMain.handle("local:createTask", async (_event, { dir, projectPath, sourceBranch, targetBranch, title, description, checklist, labels, push }) => {
+  // Orquesta el flujo Crear tarea (single-project): crea Issue → (opcional) rama feature → commitea
+  // los cambios con "#<iid>" → push → crea MR (Closes #iid). Secuencial y NO atómico.
+  ipcMain.handle("local:createTask", async (_event, { dir, projectPath, sourceBranch, targetBranch, title, description, checklist, labels, push, commitMessage, newBranch }) => {
     localRootGuard(dir);
     const branchRe = /^[\w./-]{1,200}$/;
     const projRe = /^[\w.-]+(\/[\w.-]+)*$/;
@@ -214,15 +239,15 @@ function wireIpc() {
     const checkItems = (Array.isArray(checklist) ? checklist : []).filter((c) => typeof c === "string" && c.trim());
     const checklistMd = checkItems.length ? `\n\n## Puntos a comprobar\n${checkItems.map((c) => `- [ ] ${c.trim()}`).join("\n")}` : "";
     const safeLabels = (Array.isArray(labels) ? labels : []).filter((l) => typeof l === "string" && l.trim());
-    const pushResult = push ? await local.pushBranch(dir, sourceBranch) : null;
     const issue = await gh().createIssue(projectPath, { title: String(title).trim(), description: `${description || ""}${checklistMd}`, labels: safeLabels });
+    const { branch, commit } = await prepareLocalBranch(dir, projectPath, { sourceBranch, newBranch, commitMessage, issueIid: issue.iid, push });
     const mr = await gh().createMergeRequest(projectPath, {
-      sourceBranch,
+      sourceBranch: branch,
       targetBranch,
       title: String(title).trim(),
       description: `Closes #${issue.iid}\n\n${description || ""}${checklistMd}`,
     });
-    return { push: pushResult, issue, mr };
+    return { issue, commit, branch, mr };
   });
   // Propuesta IA para una Epic multiproyecto: calcula el diff de cada proyecto y se lo pasa a la IA.
   ipcMain.handle("local:proposeEpic", async (_event, { projects }) => {
@@ -230,7 +255,7 @@ function wireIpc() {
     const withDiff = [];
     for (const p of list) {
       localRootGuard(p.dir);
-      const diff = await local.branchDiff(p.dir, p.targetBranch, p.sourceBranch);
+      const diff = (await local.workingDiff(p.dir)) || (await local.branchDiff(p.dir, p.targetBranch, p.sourceBranch));
       withDiff.push({ name: p.repoName, branch: p.sourceBranch, diff });
     }
     return ai.proposeEpic({ projects: withDiff });
@@ -255,15 +280,15 @@ function wireIpc() {
         if (!p.title || !String(p.title).trim()) throw new Error("Falta el título de la tarea");
         const checkItems = (Array.isArray(p.checklist) ? p.checklist : []).filter((c) => typeof c === "string" && c.trim());
         const checklistMd = checkItems.length ? `\n\n## Puntos a comprobar\n${checkItems.map((c) => `- [ ] ${c.trim()}`).join("\n")}` : "";
-        if (p.push) await local.pushBranch(p.dir, p.sourceBranch);
         const task = await gh().createIssue(p.projectPath, { title: String(p.title).trim(), description: `Épica: ${epicRef}\n\n${p.description || ""}${checklistMd}`, labels: [] });
+        const { branch, commit } = await prepareLocalBranch(p.dir, p.projectPath, { sourceBranch: p.sourceBranch, newBranch: p.newBranch, commitMessage: p.commitMessage, issueIid: task.iid, push: p.push });
         const mr = await gh().createMergeRequest(p.projectPath, {
-          sourceBranch: p.sourceBranch,
+          sourceBranch: branch,
           targetBranch: p.targetBranch,
           title: String(p.title).trim(),
           description: `Closes #${task.iid}\nÉpica: ${epicRef}\n\n${p.description || ""}${checklistMd}`,
         });
-        results.push({ projectPath: p.projectPath, ok: true, task, mr });
+        results.push({ projectPath: p.projectPath, ok: true, task, mr, commit });
       } catch (err) {
         results.push({ projectPath: p.projectPath, ok: false, error: String(err.message || err) });
       }
@@ -288,10 +313,10 @@ function wireIpc() {
         if (!projRe.test(p.projectPath || "")) throw new Error("Proyecto no válido");
         if (!branchRe.test(p.sourceBranch || "") || !branchRe.test(p.targetBranch || "")) throw new Error("Rama no válida");
         if (!p.title || !String(p.title).trim()) throw new Error("Falta el título de la MR");
-        if (p.push) await local.pushBranch(p.dir, p.sourceBranch);
+        const { branch, commit } = await prepareLocalBranch(p.dir, p.projectPath, { sourceBranch: p.sourceBranch, newBranch: p.newBranch, commitMessage: p.commitMessage, issueIid: issue.iid, push: p.push });
         const link = issue.projectPath === p.projectPath ? `Closes #${issue.iid}` : `Relacionada con ${issueRef}`;
-        const mr = await gh().createMergeRequest(p.projectPath, { sourceBranch: p.sourceBranch, targetBranch: p.targetBranch, title: String(p.title).trim(), description: `${link}\n` });
-        results.push({ projectPath: p.projectPath, ok: true, mr });
+        const mr = await gh().createMergeRequest(p.projectPath, { sourceBranch: branch, targetBranch: p.targetBranch, title: String(p.title).trim(), description: `${link}\n` });
+        results.push({ projectPath: p.projectPath, ok: true, mr, commit });
       } catch (err) {
         results.push({ projectPath: p.projectPath, ok: false, error: String(err.message || err) });
       }

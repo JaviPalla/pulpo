@@ -1245,3 +1245,10 @@ div.lf-proj { border: 1px solid var(--border); border-radius: 10px; padding: 10p
 .md-preview pre code { background: none; padding: 0; }
 .md-preview a { color: var(--accent); }
 .hidden { display: none; }
+
+/* Leyenda "sucio" + rama feature en el formulario */
+.local-legend { margin: 4px 20px 0; font-size: 12px; color: var(--text-muted); }
+.local-legend .local-dirty { font-weight: 600; }
+.lf-feat { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; background: var(--yellow-bg, var(--bg-hover)); border: 1px solid var(--border); border-radius: 8px; }
+.lf-feat code { background: var(--bg-hover); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+.lf-nb { font: inherit; font-size: 13px; color: var(--text); background: var(--bg-raised); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }

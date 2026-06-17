@@ -354,8 +354,9 @@ const TASK_SCHEMA = {
       items: { type: "string", description: "Un punto a comprobar/validar del flujo introducido, en español." },
       description: "Puntos a comprobar del flujo (QA). Entre 2 y 8.",
     },
+    commitMessage: { type: "string", description: "Mensaje de commit conciso en español (una línea, estilo imperativo). SIN el ID de la issue." },
   },
-  required: ["title", "description", "checklist"],
+  required: ["title", "description", "checklist", "commitMessage"],
   additionalProperties: false,
 };
 
@@ -366,6 +367,7 @@ Te paso el diff de la rama "${branch}" del repo "${repoName}". A partir de él:
 - "title": un título conciso y claro en ESPAÑOL para la issue.
 - "description": en ESPAÑOL (markdown), el PROPÓSITO de la tarea a nivel general (qué se busca conseguir y por qué). NO describas el detalle de implementación del código: NO menciones servicios, funciones, clases ni ficheros concretos. Si hace falta algún detalle técnico, exprésalo a nivel de ENDPOINTS a implementar (p.ej. "POST /pedidos"), nunca servicios o funciones concretas — salvo que el propósito mismo de la tarea SEA ese servicio/función.
 - "checklist": entre 2 y 8 PUNTOS A COMPROBAR del flujo introducido (QA), en ESPAÑOL, concretos y verificables (no genéricos).
+- "commitMessage": un mensaje de commit conciso en ESPAÑOL (una línea, imperativo, p.ej. "Añade exportación de pedidos a CSV"). NO incluyas el ID de la issue (se añade aparte).
 ${truncated ? "- Nota: el diff se truncó por longitud; tenlo en cuenta.\n" : ""}
 Responde SOLO con un objeto JSON con esta forma (sin prosa ni cercos):
 {"title": string, "description": string, "checklist": [string]}
@@ -383,6 +385,7 @@ async function proposeTask({ diffText, repoName, branch }) {
     title: typeof data.title === "string" ? data.title.trim() : "",
     description: typeof data.description === "string" ? data.description : "",
     checklist: (Array.isArray(data.checklist) ? data.checklist : []).filter((x) => typeof x === "string" && x.trim()).slice(0, 8),
+    commitMessage: typeof data.commitMessage === "string" ? data.commitMessage.trim() : "",
     backend,
     model,
     effort,
@@ -402,8 +405,9 @@ const EPIC_SCHEMA = {
           title: { type: "string", description: "Título de la tarea para ESE proyecto, en español." },
           description: { type: "string", description: "Descripción (markdown) del cambio en ESE proyecto, en español." },
           checklist: { type: "array", items: { type: "string" }, description: "2 a 8 puntos a comprobar de ese proyecto." },
+          commitMessage: { type: "string", description: "Mensaje de commit conciso (una línea, imperativo) de ese proyecto, SIN el ID de la issue." },
         },
-        required: ["title", "description", "checklist"],
+        required: ["title", "description", "checklist", "commitMessage"],
         additionalProperties: false,
       },
     },
@@ -421,7 +425,7 @@ function buildEpicPrompt(projects) {
 Para cada proyecto te paso su diff (encabezado con su índice entre corchetes). Devuelve:
 - "epicTitle": un título en ESPAÑOL para la Epic que englobe el cambio completo.
 - "projects": un objeto por proyecto, EN EL MISMO ORDEN, con "title" (título de la tarea de ese proyecto), "description" y "checklist", todo en ESPAÑOL.
-La "description" debe ser el PROPÓSITO de la tarea a nivel general (qué se busca y por qué), NO el detalle de implementación: NO menciones servicios, funciones, clases ni ficheros concretos. Si hace falta detalle técnico, exprésalo a nivel de ENDPOINTS a implementar, nunca servicios/funciones concretas — salvo que el propósito de la tarea SEA ese servicio/función. El "checklist" son 2-8 puntos a comprobar concretos.
+La "description" debe ser el PROPÓSITO de la tarea a nivel general (qué se busca y por qué), NO el detalle de implementación: NO menciones servicios, funciones, clases ni ficheros concretos. Si hace falta detalle técnico, exprésalo a nivel de ENDPOINTS a implementar, nunca servicios/funciones concretas — salvo que el propósito de la tarea SEA ese servicio/función. El "checklist" son 2-8 puntos a comprobar concretos. El "commitMessage" es un mensaje de commit conciso (una línea, imperativo) SIN el ID de la issue.
 
 Responde SOLO con un objeto JSON con esta forma (sin prosa ni cercos):
 {"epicTitle": string, "projects": [{"title": string, "description": string, "checklist": [string]}]}
@@ -444,6 +448,7 @@ async function proposeEpic({ projects }) {
         title: typeof p.title === "string" ? p.title.trim() : "",
         description: typeof p.description === "string" ? p.description : "",
         checklist: (Array.isArray(p.checklist) ? p.checklist : []).filter((x) => typeof x === "string" && x.trim()).slice(0, 8),
+        commitMessage: typeof p.commitMessage === "string" ? p.commitMessage.trim() : "",
       };
     }),
     backend,

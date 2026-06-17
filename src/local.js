@@ -122,7 +122,39 @@ async function branchDiff(dir, target, branch) {
   return "";
 }
 
-module.exports = { scanRepos, repoInfo, remotePath, parseWorktrees, parseBranches, pushBranch, branchDiff };
+// Crea (y cambia a) una rama nueva desde la rama actual. Los cambios sin commitear "viajan" a la
+// rama nueva (siguen en el working tree). Para el caso "estoy en development → saco una feature".
+async function createLocalBranch(dir, branch) {
+  if (!BRANCH_RE.test(branch || "")) throw new Error(`Nombre de rama no válido: ${branch}`);
+  await git(dir, ["checkout", "-b", branch]);
+  return { branch };
+}
+
+// Commitea TODOS los cambios del working tree (add -A) con `message`. Si no hay nada que commitear
+// devuelve null (git rechaza commits vacíos). Devuelve {sha} del commit creado.
+async function commitAll(dir, message) {
+  await git(dir, ["add", "-A"]);
+  try {
+    await git(dir, ["diff", "--cached", "--quiet"]); // exit 0 = nada staged
+    return null;
+  } catch {
+    /* exit≠0 = hay cambios staged → commiteamos */
+  }
+  await git(dir, ["commit", "-m", message]);
+  const sha = (await git(dir, ["rev-parse", "HEAD"])).trim();
+  return { sha };
+}
+
+// Diff de los cambios SIN commitear (vs HEAD), para que la IA sugiera el mensaje del commit.
+async function workingDiff(dir) {
+  try {
+    return await git(dir, ["diff", "HEAD"]);
+  } catch {
+    return "";
+  }
+}
+
+module.exports = { scanRepos, repoInfo, remotePath, parseWorktrees, parseBranches, pushBranch, branchDiff, createLocalBranch, commitAll, workingDiff };
 
 // Auto-verificación: `node src/local.js [dir]` (dir por defecto = el padre de este repo).
 if (require.main === module) {

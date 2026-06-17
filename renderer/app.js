@@ -3655,6 +3655,7 @@ function renderLocal() {
       <button class="btn local-change" id="local-pick">Cambiar…</button>
     </div>
     ${repos.length ? `<div class="local-repos">${cards}</div>` : `<div class="local-empty"><p>No se han encontrado repos git directamente bajo ese directorio.</p></div>`}
+    ${repos.length ? `<p class="local-legend"><span class="local-dirty">● sucio</span> = el repo tiene cambios sin commitear; se commitearán (con tu mensaje + el #ID de la issue) al crear la tarea.</p>` : ""}
     ${actionBar}`;
   $("#local-pick")?.addEventListener("click", pickLocalRoot);
   list.querySelectorAll(".local-repo.selectable").forEach((el) =>
@@ -3677,7 +3678,8 @@ function openLocalForm(dirs) {
       const repo = (l.repos || []).find((r) => r.dir === dir);
       if (!repo) return null;
       const info = l.info[dir] || {};
-      return { repo, info, sourceBranch: info.current || (info.branches?.[0]?.name ?? ""), targetBranch: "development", title: "", description: "", checklist: "" };
+      const sourceBranch = info.current || (info.branches?.[0]?.name ?? "");
+      return { repo, info, sourceBranch, targetBranch: "development", title: "", description: "", checklist: "", commitMessage: "", newBranch: "", createBranch: isBaseBranch(sourceBranch) };
     })
     .filter(Boolean);
   if (!projects.length) return;
@@ -3712,6 +3714,9 @@ function syncLocalForm() {
     p.title = $(`#lf-title-${i}`)?.value ?? p.title;
     p.description = $(`#lf-desc-${i}`)?.value ?? p.description;
     p.checklist = $(`#lf-checklist-${i}`)?.value ?? p.checklist;
+    p.commitMessage = $(`#lf-commit-${i}`)?.value ?? p.commitMessage;
+    if ($(`#lf-nb-on-${i}`)) p.createBranch = $(`#lf-nb-on-${i}`).checked;
+    p.newBranch = $(`#lf-nb-${i}`)?.value ?? p.newBranch;
   });
 }
 
@@ -3779,6 +3784,31 @@ function wireMdFields() {
   });
 }
 
+// Ramas "base" sobre las que NO se debería trabajar directamente: sugerimos sacar una rama feature.
+function isBaseBranch(name) {
+  return ["development", "develop", "main", "master"].includes((name || "").trim());
+}
+
+function slug(s) {
+  return (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50);
+}
+
+// Extras por proyecto comunes a Crear y Vincular: (1) si la rama origen es una rama base, sugerir
+// crear una rama feature; (2) si el repo tiene cambios sin commitear, pedir el mensaje del commit
+// (al que el backend añade el "#ID" de la issue). `pfx` = "lf" (crear) | "llf" (vincular).
+function localBranchExtras(p, i, pfx) {
+  const feat = isBaseBranch(p.sourceBranch)
+    ? `<div class="lf-feat">
+        <label class="lf-check"><input type="checkbox" id="${pfx}-nb-on-${i}" ${p.createBranch ? "checked" : ""} /> Estás en <code>${esc(p.sourceBranch)}</code>: crea una rama <b>feature</b> con estos cambios antes de la MR</label>
+        ${p.createBranch ? `<input class="lf-nb" id="${pfx}-nb-${i}" type="text" value="${esc(p.newBranch)}" placeholder="feature/mi-cambio" />` : ""}
+      </div>`
+    : "";
+  const commit = p.info?.dirty
+    ? `<label class="lf-field">Mensaje del commit <span class="muted">(hay cambios sin commitear · se añadirá el #ID de la issue al final)</span><input id="${pfx}-commit-${i}" type="text" value="${esc(p.commitMessage)}" placeholder="Describe el cambio…" /></label>`
+    : "";
+  return feat + commit;
+}
+
 // Bloque de campos de un proyecto dentro del form. En Epic, desc/checklist van en un <details> para
 // no hacer el formulario kilométrico; en single van siempre visibles.
 function localProjectBlock(p, i, epic) {
@@ -3791,6 +3821,7 @@ function localProjectBlock(p, i, epic) {
       <label>Rama origen<select id="lf-source-${i}">${branchOpts}</select></label>
       <label>Rama destino<input id="lf-target-${i}" type="text" value="${esc(p.targetBranch)}" placeholder="development" /></label>
     </div>
+    ${localBranchExtras(p, i, "lf")}
     <label class="lf-field">Título<input id="lf-title-${i}" type="text" value="${esc(p.title)}" placeholder="Título de la tarea" /></label>
     ${mdField(`lf-desc-${i}`, "Descripción", p.description, epic ? 4 : 6, "Propósito de la tarea (markdown)")}
     ${mdField(`lf-checklist-${i}`, `Puntos a comprobar <span class="muted">(uno por línea)</span>`, p.checklist, epic ? 3 : 5, "- Verificar que…")}`;
@@ -3837,11 +3868,26 @@ function renderLocalForm() {
   $("#lf-mode-manual").addEventListener("click", () => { syncLocalForm(); f.mode = "manual"; renderLocal(); });
   $("#lf-suggest")?.addEventListener("click", suggestLocalTask);
   $("#lf-create").addEventListener("click", confirmCreateLocalTask);
+  // Cambiar la rama origen o togglear "crear rama feature" re-renderiza (cambia qué extras se muestran).
+  f.projects.forEach((_, i) => {
+    $(`#lf-source-${i}`)?.addEventListener("change", () => { syncLocalForm(); renderLocal(); });
+    $(`#lf-nb-on-${i}`)?.addEventListener("change", () => { syncLocalForm(); renderLocal(); });
+  });
   wireMdFields();
   notifySelftestOnce();
 }
 
 const checklistToText = (arr) => (Array.isArray(arr) && arr.length ? arr.map((c) => `- ${c}`).join("\n") : "");
+
+// Vuelca una propuesta de IA (title/description/checklist/commitMessage) sobre un proyecto del form,
+// y sugiere el nombre de la rama feature a partir del título si aún no se ha tocado.
+function applyProposal(p, out) {
+  p.title = out.title || p.title;
+  p.description = out.description || p.description;
+  if (out.checklist?.length) p.checklist = checklistToText(out.checklist);
+  if (out.commitMessage) p.commitMessage = out.commitMessage;
+  if (p.createBranch && (!p.newBranch || p.newBranch === "feature/") && p.title) p.newBranch = `feature/${slug(p.title)}`;
+}
 
 async function suggestLocalTask() {
   const f = state.local.form;
@@ -3857,16 +3903,12 @@ async function suggestLocalTask() {
       f.epicTitle = out.epicTitle || f.epicTitle;
       out.projects.forEach((pr, i) => {
         if (!f.projects[i]) return;
-        f.projects[i].title = pr.title || f.projects[i].title;
-        f.projects[i].description = pr.description || f.projects[i].description;
-        if (pr.checklist?.length) f.projects[i].checklist = checklistToText(pr.checklist);
+        applyProposal(f.projects[i], pr);
       });
     } else {
       const p = f.projects[0];
       const out = await window.pulpo.localProposeTask({ dir: p.repo.dir, repoName: p.repo.gitlabPath || p.repo.name, sourceBranch: p.sourceBranch, targetBranch: p.targetBranch });
-      p.title = out.title || p.title;
-      p.description = out.description || p.description;
-      if (out.checklist?.length) p.checklist = checklistToText(out.checklist);
+      applyProposal(p, out);
     }
   } catch (err) {
     f.error = `IA: ${String(err.message || err)}`;
@@ -3903,6 +3945,20 @@ function confirmCreateLocalTask() {
   $("#modal-confirm").addEventListener("click", () => { root.innerHTML = ""; createLocalTask(); });
 }
 
+// Payload por proyecto para los orquestadores (incluye mensaje de commit y rama feature opcional).
+const localProjPayload = (p, push) => ({
+  dir: p.repo.dir,
+  projectPath: p.repo.gitlabPath,
+  sourceBranch: p.sourceBranch,
+  targetBranch: p.targetBranch,
+  title: (p.title || "").trim(),
+  description: p.description,
+  checklist: parseChecklist(p.checklist),
+  commitMessage: (p.commitMessage || "").trim(),
+  newBranch: p.createBranch ? (p.newBranch || "").trim() : "",
+  push,
+});
+
 async function createLocalTask() {
   const f = state.local.form;
   f.creating = true;
@@ -3913,31 +3969,12 @@ async function createLocalTask() {
       f.result = await window.pulpo.localCreateEpicTask({
         epicTitle: f.epicTitle.trim(),
         epicDescription: "",
-        projects: f.projects.map((p) => ({
-          dir: p.repo.dir,
-          projectPath: p.repo.gitlabPath,
-          sourceBranch: p.sourceBranch,
-          targetBranch: p.targetBranch,
-          title: p.title.trim(),
-          description: p.description,
-          checklist: parseChecklist(p.checklist),
-          push: f.push,
-        })),
+        projects: f.projects.map((p) => localProjPayload(p, f.push)),
       });
       const ok = f.result.results.filter((x) => x.ok).length;
       toast(`Epic + ${ok}/${f.result.results.length} tareas creadas ✓`, ok === f.result.results.length ? "ok" : "warn");
     } else {
-      const p = f.projects[0];
-      f.result = await window.pulpo.localCreateTask({
-        dir: p.repo.dir,
-        projectPath: p.repo.gitlabPath,
-        sourceBranch: p.sourceBranch,
-        targetBranch: p.targetBranch,
-        title: p.title.trim(),
-        description: p.description,
-        checklist: parseChecklist(p.checklist),
-        push: f.push,
-      });
+      f.result = await window.pulpo.localCreateTask(localProjPayload(f.projects[0], f.push));
       toast("Issue + MR creadas ✓", "ok");
     }
   } catch (err) {
@@ -3961,17 +3998,18 @@ function renderLocalResult() {
     const rows = results
       .map((r) =>
         r.ok
-          ? `<div class="lf-result-card"><span class="lf-result-k">${esc(r.projectPath)}</span>${extLink(r.task.url, `#${r.task.iid}`)} · ${extLink(r.mr.url, `!${r.mr.number}`)}</div>`
+          ? `<div class="lf-result-card"><span class="lf-result-k">${esc(r.projectPath)}</span>${extLink(r.task.url, `#${r.task.iid}`)} · ${extLink(r.mr.url, `!${r.mr.number}`)}${r.commit ? ` · ${extLink(r.commit.url, `commit ${r.commit.sha.slice(0, 8)}`)}` : ""}</div>`
           : `<div class="lf-result-card err"><span class="lf-result-k">${esc(r.projectPath)}</span><span class="local-err">${esc(r.error)}</span></div>`,
       )
       .join("");
     bodyHtml = `<div class="lf-result-card"><span class="lf-result-k">Epic</span>${extLink(epic.url, `#${epic.iid} · ${epic.title}`)}</div>${rows}`;
   } else {
-    const { issue, mr } = f.result;
+    const { issue, mr, commit } = f.result;
     primaryMr = mr;
     bodyHtml = `
       <div class="lf-result-card"><span class="lf-result-k">Issue</span>${extLink(issue.url, `#${issue.iid} · ${issue.title}`)}</div>
-      <div class="lf-result-card"><span class="lf-result-k">Merge Request</span>${extLink(mr.url, `!${mr.number} · ${mr.title}`)}</div>`;
+      <div class="lf-result-card"><span class="lf-result-k">Merge Request</span>${extLink(mr.url, `!${mr.number} · ${mr.title}`)}</div>
+      ${commit ? `<div class="lf-result-card"><span class="lf-result-k">Commit</span>${extLink(commit.url, commit.sha.slice(0, 8))}</div>` : ""}`;
   }
   list.innerHTML = `
     <div class="local-head">
@@ -4019,7 +4057,8 @@ function openLocalLinkForm(dirs) {
       const repo = (l.repos || []).find((r) => r.dir === dir);
       if (!repo) return null;
       const info = l.info[dir] || {};
-      return { repo, info, sourceBranch: info.current || (info.branches?.[0]?.name ?? ""), targetBranch: "development", title: "" };
+      const sourceBranch = info.current || (info.branches?.[0]?.name ?? "");
+      return { repo, info, sourceBranch, targetBranch: "development", title: "", commitMessage: "", newBranch: "", createBranch: isBaseBranch(sourceBranch) };
     })
     .filter(Boolean);
   if (!projects.length) return;
@@ -4041,6 +4080,9 @@ function syncLocalLinkForm() {
     p.sourceBranch = $(`#llf-source-${i}`)?.value ?? p.sourceBranch;
     p.targetBranch = ($(`#llf-target-${i}`)?.value ?? p.targetBranch).trim();
     p.title = $(`#llf-title-${i}`)?.value ?? p.title;
+    p.commitMessage = $(`#llf-commit-${i}`)?.value ?? p.commitMessage;
+    if ($(`#llf-nb-on-${i}`)) p.createBranch = $(`#llf-nb-on-${i}`).checked;
+    p.newBranch = $(`#llf-nb-${i}`)?.value ?? p.newBranch;
   });
 }
 
@@ -4074,6 +4116,7 @@ function renderLocalLinkForm() {
           <label>Rama origen<select id="llf-source-${i}">${opts}</select></label>
           <label>Rama destino<input id="llf-target-${i}" type="text" value="${esc(p.targetBranch)}" placeholder="development" /></label>
         </div>
+        ${localBranchExtras(p, i, "llf")}
         <label class="lf-field">Título de la MR<input id="llf-title-${i}" type="text" value="${esc(p.title)}" placeholder="Título de la MR" /></label>
       </div>`;
     })
@@ -4106,6 +4149,10 @@ function renderLocalLinkForm() {
     }),
   );
   $("#llf-create").addEventListener("click", confirmLinkTask);
+  f.projects.forEach((_, i) => {
+    $(`#llf-source-${i}`)?.addEventListener("change", () => { syncLocalLinkForm(); renderLocal(); });
+    $(`#llf-nb-on-${i}`)?.addEventListener("change", () => { syncLocalLinkForm(); renderLocal(); });
+  });
   notifySelftestOnce();
 }
 
@@ -4157,7 +4204,7 @@ async function createLinkTask() {
   try {
     f.result = await window.pulpo.localLinkTask({
       issue: f.issue,
-      projects: f.projects.map((p) => ({ dir: p.repo.dir, projectPath: p.repo.gitlabPath, sourceBranch: p.sourceBranch, targetBranch: p.targetBranch, title: p.title.trim(), push: f.push })),
+      projects: f.projects.map((p) => localProjPayload(p, f.push)),
     });
     const ok = f.result.results.filter((x) => x.ok).length;
     toast(`${ok}/${f.result.results.length} MR creadas ✓`, ok === f.result.results.length ? "ok" : "warn");
@@ -4177,7 +4224,7 @@ function renderLinkResult() {
   const rows = results
     .map((r) =>
       r.ok
-        ? `<div class="lf-result-card"><span class="lf-result-k">${esc(r.projectPath)}</span>${extLink(r.mr.url, `!${r.mr.number} · ${r.mr.title}`)}</div>`
+        ? `<div class="lf-result-card"><span class="lf-result-k">${esc(r.projectPath)}</span>${extLink(r.mr.url, `!${r.mr.number} · ${r.mr.title}`)}${r.commit ? ` · ${extLink(r.commit.url, `commit ${r.commit.sha.slice(0, 8)}`)}` : ""}</div>`
         : `<div class="lf-result-card err"><span class="lf-result-k">${esc(r.projectPath)}</span><span class="local-err">${esc(r.error)}</span></div>`,
     )
     .join("");
