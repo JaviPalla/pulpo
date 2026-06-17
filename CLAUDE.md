@@ -45,7 +45,6 @@ Mac (Electron) PR/MR client for Jesús — supports **GitHub and GitLab** (one p
 - PR body HTML comes from GitHub's `bodyHTML` (already sanitized) — do not inject other HTML unescaped; everything else goes through `esc()`.
 - No default repo: a fresh install shows the onboarding repo picker (suggestions from `viewerRepos()`), and repos can be edited later in Settings. Never reintroduce a hardcoded default repo.
 
-
 <!-- BEGIN MULTICA-RUNTIME (auto-managed; do not edit) -->
 # Multica Agent Runtime
 
