@@ -52,6 +52,28 @@ const DEFAULTS = {
     // abierto con cualquiera de estas no cuenta como pendiente. Editable por instancia.
     doneLabels: ["finished", "pending check", "pending check by issuer", "pending check in pruebas"],
   },
+  // Vista de Releases (solo GitLab): genera la release branch rb/<version> replicando el script
+  // legacy auto-rb-branches.py. El selector de proyectos se puebla del grupo en vivo (groupProjects),
+  // pero la SELECCIÓN por defecto y la última usada se guardan aquí (configurable + recordada).
+  releases: {
+    // Rama origen por defecto de la que sale la release branch (ref del POST de creación).
+    sourceBranch: "development",
+    // Prefijo de la rama de salida; el nombre final es `${branchPrefix}${version}` (p.ej. rb/062026).
+    branchPrefix: "rb/",
+    // Selección por defecto (los 8 proyectos del script, por ID numérico estable: los nombres ya no
+    // coinciden con el script). Se usa la PRIMERA vez (cuando aún no hay selección recordada).
+    defaultProjectIds: ["12", "42", "25", "4", "11", "13", "19", "58"],
+    // Última selección del usuario (paths de proyecto), recordada entre sesiones. null = usar los
+    // defaultProjectIds. La vista la reescribe cada vez que cambias la selección.
+    selectedProjects: null,
+    // Ouicare: el AppDate es una appSetting del Web.config (cache-buster del appcache) que hay que
+    // bumpear en cada release. Se actualiza en la rama origen antes de crear la release branch.
+    ouicare: {
+      projectPath: "OpenSaludGroup/opensalud",
+      webConfigPath: "Ouicare/Web.config",
+      appDateKey: "AppDate",
+    },
+  },
 };
 
 function configPath() {
@@ -67,6 +89,9 @@ function load() {
     cfg.cherryPick = { ...DEFAULTS.cherryPick, ...(parsed.cherryPick || {}) };
     // Merge profundo de milestones: un guardado parcial no debe pisar los defaults del resto de claves.
     cfg.milestones = { ...DEFAULTS.milestones, ...(parsed.milestones || {}) };
+    // Merge profundo de releases (incl. la clave anidada ouicare): un guardado parcial no debe pisar defaults.
+    cfg.releases = { ...DEFAULTS.releases, ...(parsed.releases || {}) };
+    cfg.releases.ouicare = { ...DEFAULTS.releases.ouicare, ...(parsed.releases?.ouicare || {}) };
     return cfg;
   } catch {
     return { ...DEFAULTS };

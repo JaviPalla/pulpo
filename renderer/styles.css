@@ -367,6 +367,7 @@ body {
 }
 .toast.ok { border-left-color: var(--green); }
 .toast.err { border-left-color: var(--red); }
+.toast.warn { border-left-color: #bf8700; }
 @keyframes slide-up { from { opacity: 0; transform: translateY(8px); } }
 
 /* ---------- tabs ---------- */
@@ -1094,3 +1095,63 @@ body {
 .repo-line button { margin-left: auto; }
 .add-repo { display: flex; gap: 8px; margin-top: 10px; }
 .muted { color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+
+/* ---------- releases (generar release branches) ---------- */
+.dot-release { background: linear-gradient(135deg, var(--orange, #bf8700), var(--red)); }
+.rel-view { max-width: 720px; margin: 0 auto; padding: 8px 4px 40px; }
+.rel-head h2 { margin-bottom: 4px; }
+.rel-sub { color: var(--text-muted); font-size: 13px; line-height: 1.5; }
+.rel-view code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+  background: var(--gray-bg); padding: 1px 5px; border-radius: 5px;
+}
+.rel-form {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px;
+  align-items: end; margin: 18px 0 8px;
+}
+.rel-field { display: flex; flex-direction: column; gap: 5px; }
+.rel-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.rel-field input[type="text"] {
+  font: inherit; color: var(--text); background: var(--gray-bg);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; width: 100%;
+}
+.rel-field input:focus { outline: none; border-color: var(--accent); }
+.rel-preview-box { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; }
+.rel-branch-preview { font-size: 13px !important; font-weight: 600; }
+.rel-branch-preview.invalid { color: var(--red); background: var(--red-bg); }
+
+.rel-projects-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 22px 0 8px; font-weight: 600; font-size: 13px;
+}
+.rel-count { color: var(--text-muted); font-weight: 500; margin-left: 4px; }
+/* Selector de proyectos: chips reutilizando .ms-proj-filter / .ms-proj-chip del filtro del resumen. */
+.rel-projects { margin-bottom: 4px; }
+
+/* AppDate de Ouicare (solo si Ouicare está seleccionado). */
+.rel-appdate {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
+  margin: 16px 0 4px; padding: 10px 12px; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--yellow-bg);
+}
+.rel-appdate-toggle { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.rel-appdate-toggle input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+.rel-appdate input[type="date"] {
+  font: inherit; color: var(--text); background: var(--bg-raised);
+  border: 1px solid var(--border); border-radius: 7px; padding: 5px 8px;
+}
+.rel-appdate .muted { flex-basis: 100%; }
+
+.rel-summary { margin: 18px 0 4px; padding: 10px 12px; border-radius: 9px; font-size: 13px; border: 1px solid var(--border); }
+.rel-summary.ok { background: var(--green-bg); border-color: var(--green); }
+.rel-summary.warn { background: var(--yellow-bg); border-color: var(--yellow); }
+.rel-summary.err { background: var(--red-bg); border-color: var(--red); }
+.rel-results { display: flex; flex-direction: column; gap: 3px; margin: 6px 0; font-size: 13px; }
+.rel-res-row.ok { color: var(--green); }
+.rel-res-row.err { color: var(--red); }
+.rel-res-row a { color: var(--accent); margin-left: 6px; }
+.rel-actions { margin-top: 22px; }
+
+.rel-confirm-list { margin: 10px 0; padding-left: 18px; font-size: 13px; line-height: 1.7; }
+.rel-confirm-notes { margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
+.rel-confirm-note { font-size: 12px; color: var(--text); background: var(--yellow-bg); padding: 6px 9px; border-radius: 7px; }

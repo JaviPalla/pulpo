@@ -407,6 +407,18 @@ async function groupProjects() {
   throw new Error("La vista de Milestones solo está disponible en GitLab.");
 }
 
+/**
+ * Stubs de paridad: la vista de Releases (generar release branches) es solo-GitLab
+ * (la UI la oculta cuando provider !== "gitlab"). Fallamos explícito en vez de en silencio.
+ */
+async function releaseDefaults() {
+  throw new Error("La vista de Releases solo está disponible en GitLab.");
+}
+
+async function generateReleaseBranches() {
+  throw new Error("La vista de Releases solo está disponible en GitLab.");
+}
+
 async function revertPullRequest(prNodeId) {
   const data = await gql(
     `mutation ($id: ID!) {
@@ -478,4 +490,6 @@ module.exports = {
   groupProjects,
   updateIssue,
   collapseMilestoneEpics,
+  releaseDefaults,
+  generateReleaseBranches,
 };
