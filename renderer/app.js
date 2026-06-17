@@ -3715,6 +3715,70 @@ function syncLocalForm() {
   });
 }
 
+// Markdown → HTML SEGURO (subset: headings, listas, task lists, negrita/cursiva, código, enlaces
+// http/https). Escapa primero y opera sobre texto ya escapado, así no hay inyección. Dependency-free
+// (CSP estricta, sin libs). Solo para el preview del formulario; GitLab renderiza el markdown real.
+function mdPreview(md) {
+  if (!md || !md.trim()) return "";
+  const parts = esc(md).split("```"); // pares = texto normal, impares = bloque de código
+  return parts
+    .map((part, i) => (i % 2 === 1 ? `<pre><code>${part.replace(/^\n/, "").replace(/\n$/, "")}</code></pre>` : renderMdBlocks(part)))
+    .join("");
+}
+
+function renderMdBlocks(text) {
+  const inline = (t) =>
+    t
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*([^*\n]+)\*/g, "<em>$1</em>")
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2">$1</a>');
+  const out = [];
+  let list = null;
+  const closeList = () => { if (list) { out.push("</ul>"); list = null; } };
+  for (const raw of text.split("\n")) {
+    const line = raw.trimEnd();
+    let m;
+    if ((m = /^(#{1,4})\s+(.*)$/.exec(line))) { closeList(); const lvl = Math.min(m[1].length + 2, 6); out.push(`<h${lvl}>${inline(m[2])}</h${lvl}>`); }
+    else if ((m = /^[-*]\s+\[([ xX])\]\s+(.*)$/.exec(line))) { if (list !== "task") { closeList(); out.push('<ul class="md-task">'); list = "task"; } out.push(`<li>${m[1].toLowerCase() === "x" ? "☑" : "☐"} ${inline(m[2])}</li>`); }
+    else if ((m = /^[-*]\s+(.*)$/.exec(line))) { if (list !== "ul") { closeList(); out.push("<ul>"); list = "ul"; } out.push(`<li>${inline(m[1])}</li>`); }
+    else if (!line.trim()) { closeList(); }
+    else { closeList(); out.push(`<p>${inline(line)}</p>`); }
+  }
+  closeList();
+  return out.join("");
+}
+
+// Campo markdown estilo GitLab: pestañas Editar / Vista previa sobre un textarea. `label` es HTML de
+// confianza (de nuestro código); el valor se escapa. wireMdFields() cablea el toggle tras el render.
+function mdField(id, label, value, rows, placeholder) {
+  return `<div class="md-field">
+    <div class="md-tabs">
+      <span class="md-label">${label}</span>
+      <button type="button" class="md-tab on" data-tab="write">Editar</button>
+      <button type="button" class="md-tab" data-tab="preview">Vista previa</button>
+    </div>
+    <textarea id="${id}" rows="${rows}" placeholder="${esc(placeholder)}">${esc(value)}</textarea>
+    <div class="md-preview hidden"></div>
+  </div>`;
+}
+
+function wireMdFields() {
+  list.querySelectorAll(".md-field").forEach((f) => {
+    const ta = f.querySelector("textarea");
+    const pv = f.querySelector(".md-preview");
+    f.querySelectorAll(".md-tab").forEach((tab) =>
+      tab.addEventListener("click", () => {
+        const preview = tab.dataset.tab === "preview";
+        f.querySelectorAll(".md-tab").forEach((t) => t.classList.toggle("on", t === tab));
+        if (preview) pv.innerHTML = mdPreview(ta.value) || `<span class="muted">Nada que previsualizar</span>`;
+        pv.classList.toggle("hidden", !preview);
+        ta.classList.toggle("hidden", preview);
+      }),
+    );
+  });
+}
+
 // Bloque de campos de un proyecto dentro del form. En Epic, desc/checklist van en un <details> para
 // no hacer el formulario kilométrico; en single van siempre visibles.
 function localProjectBlock(p, i, epic) {
@@ -3728,8 +3792,8 @@ function localProjectBlock(p, i, epic) {
       <label>Rama destino<input id="lf-target-${i}" type="text" value="${esc(p.targetBranch)}" placeholder="development" /></label>
     </div>
     <label class="lf-field">Título<input id="lf-title-${i}" type="text" value="${esc(p.title)}" placeholder="Título de la tarea" /></label>
-    <label class="lf-field">Descripción<textarea id="lf-desc-${i}" rows="${epic ? 3 : 5}" placeholder="Qué cambia y por qué (markdown)">${esc(p.description)}</textarea></label>
-    <label class="lf-field">Puntos a comprobar <span class="muted">(uno por línea)</span><textarea id="lf-checklist-${i}" rows="${epic ? 3 : 5}" placeholder="- Verificar que…">${esc(p.checklist)}</textarea></label>`;
+    ${mdField(`lf-desc-${i}`, "Descripción", p.description, epic ? 4 : 6, "Propósito de la tarea (markdown)")}
+    ${mdField(`lf-checklist-${i}`, `Puntos a comprobar <span class="muted">(uno por línea)</span>`, p.checklist, epic ? 3 : 5, "- Verificar que…")}`;
   if (!epic) return `<div class="lf-proj">${fields}</div>`;
   return `<details class="lf-proj" open>
     <summary><span class="local-name">${esc(p.repo.name)}</span> <span class="local-badge ok">${esc(p.repo.gitlabPath)}</span></summary>
@@ -3773,6 +3837,7 @@ function renderLocalForm() {
   $("#lf-mode-manual").addEventListener("click", () => { syncLocalForm(); f.mode = "manual"; renderLocal(); });
   $("#lf-suggest")?.addEventListener("click", suggestLocalTask);
   $("#lf-create").addEventListener("click", confirmCreateLocalTask);
+  wireMdFields();
   notifySelftestOnce();
 }
 
@@ -4234,6 +4299,12 @@ async function runLocalSelftest() {
     const gl = (state.local.repos || []).filter((r) => r.gitlabPath).slice(0, 2);
     if (gl.length >= 2) openLocalForm(gl.map((r) => r.dir));
     else if (gl.length === 1) openLocalForm(gl[0].dir);
+    // Siembra markdown en la 1ª descripción y abre "Vista previa" para que la captura muestre el preview.
+    const ta = list.querySelector("#lf-desc-0");
+    if (ta) {
+      ta.value = "## Propósito\nPermitir **exportar pedidos** a CSV desde el panel de administración.\n\n- Expone el endpoint `GET /pedidos/export`\n- [ ] Verificar permisos del usuario";
+      ta.closest(".md-field")?.querySelector('.md-tab[data-tab="preview"]')?.click();
+    }
   } catch (err) {
     console.error("[selftest] local failed:", err);
   } finally {

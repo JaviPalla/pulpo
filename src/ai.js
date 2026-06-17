@@ -364,7 +364,7 @@ function buildTaskPrompt({ diffText, repoName, branch, truncated }) {
 
 Te paso el diff de la rama "${branch}" del repo "${repoName}". A partir de él:
 - "title": un título conciso y claro en ESPAÑOL para la issue.
-- "description": una descripción en ESPAÑOL (markdown) que explique QUÉ cambia y POR QUÉ, para que un revisor lo entienda sin leer todo el diff.
+- "description": en ESPAÑOL (markdown), el PROPÓSITO de la tarea a nivel general (qué se busca conseguir y por qué). NO describas el detalle de implementación del código: NO menciones servicios, funciones, clases ni ficheros concretos. Si hace falta algún detalle técnico, exprésalo a nivel de ENDPOINTS a implementar (p.ej. "POST /pedidos"), nunca servicios o funciones concretas — salvo que el propósito mismo de la tarea SEA ese servicio/función.
 - "checklist": entre 2 y 8 PUNTOS A COMPROBAR del flujo introducido (QA), en ESPAÑOL, concretos y verificables (no genéricos).
 ${truncated ? "- Nota: el diff se truncó por longitud; tenlo en cuenta.\n" : ""}
 Responde SOLO con un objeto JSON con esta forma (sin prosa ni cercos):
@@ -420,7 +420,8 @@ function buildEpicPrompt(projects) {
 
 Para cada proyecto te paso su diff (encabezado con su índice entre corchetes). Devuelve:
 - "epicTitle": un título en ESPAÑOL para la Epic que englobe el cambio completo.
-- "projects": un objeto por proyecto, EN EL MISMO ORDEN, con "title" (título de la tarea de ese proyecto), "description" (markdown, qué cambia y por qué en ese proyecto) y "checklist" (2-8 puntos a comprobar concretos), todo en ESPAÑOL.
+- "projects": un objeto por proyecto, EN EL MISMO ORDEN, con "title" (título de la tarea de ese proyecto), "description" y "checklist", todo en ESPAÑOL.
+La "description" debe ser el PROPÓSITO de la tarea a nivel general (qué se busca y por qué), NO el detalle de implementación: NO menciones servicios, funciones, clases ni ficheros concretos. Si hace falta detalle técnico, exprésalo a nivel de ENDPOINTS a implementar, nunca servicios/funciones concretas — salvo que el propósito de la tarea SEA ese servicio/función. El "checklist" son 2-8 puntos a comprobar concretos.
 
 Responde SOLO con un objeto JSON con esta forma (sin prosa ni cercos):
 {"epicTitle": string, "projects": [{"title": string, "description": string, "checklist": [string]}]}
