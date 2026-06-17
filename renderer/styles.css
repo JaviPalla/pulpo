@@ -1217,3 +1217,13 @@ details.lf-proj { border: 1px solid var(--border); border-radius: 10px; padding:
 details.lf-proj > summary { cursor: pointer; display: flex; align-items: center; gap: 8px; list-style: none; }
 details.lf-proj > summary::-webkit-details-marker { display: none; }
 details.lf-proj[open] > summary { margin-bottom: 8px; }
+div.lf-proj { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; background: var(--bg-raised); }
+.lf-proj-name { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+
+/* Vincular: buscador y resultados de Issue/Epic */
+.llf-results { display: flex; flex-direction: column; gap: 6px; }
+.llf-issue { display: flex; align-items: center; gap: 10px; text-align: left; width: 100%; font: inherit; cursor: pointer; padding: 8px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-raised); color: var(--text); }
+.llf-issue:hover { border-color: var(--accent); }
+.llf-issue.on { border-color: var(--accent); background: var(--bg-hover); }
+.llf-issue-title { flex: 1; font-size: 13px; }
+.llf-chosen { font-size: 13px; color: var(--text); padding: 8px 12px; background: var(--green-bg); border: 1px solid var(--green); border-radius: 9px; }

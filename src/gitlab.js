@@ -806,6 +806,23 @@ async function createEpic({ title, description, labels }) {
   return createIssue(`${group}/epics`, { title, description, labels });
 }
 
+// Busca issues abiertas en el grupo (incluye las del proyecto `epics` = epics) para el flujo de
+// Vincular tarea. Devuelve forma mínima: {iid, projectPath, title, url, isEpic}. projectPath sale de
+// references.full ("group/proj#iid") porque el endpoint de grupo solo trae project_id numérico.
+async function searchGroupIssues(query) {
+  const group = milestonesGroup();
+  if (!group) throw new Error("No hay grupo configurado (revisa repos o config.milestones.group).");
+  const q = encodeURIComponent(String(query || "").trim());
+  const issues = await api("GET", `/groups/${encodeURIComponent(group)}/issues?search=${q}&state=opened&order_by=updated_at&per_page=20`);
+  return (Array.isArray(issues) ? issues : []).map((it) => ({
+    iid: it.iid,
+    projectPath: (it.references?.full || "").split("#")[0] || null,
+    title: it.title,
+    url: it.web_url,
+    isEpic: isEpicUrl(it.web_url),
+  }));
+}
+
 // Las Epics viven como issues en el proyecto "epics" del grupo: las detectamos por el último
 // segmento del path del proyecto en su URL.
 // ponytail: nombre de proyecto "epics" hardcodeado; si vuestra instancia lo llama distinto,
@@ -960,6 +977,7 @@ module.exports = {
   createIssue,
   createMergeRequest,
   createEpic,
+  searchGroupIssues,
   collapseMilestoneEpics,
   releaseDefaults,
   generateReleaseBranches,

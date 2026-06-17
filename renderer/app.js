@@ -38,7 +38,7 @@ const state = {
   // Issues/Epics + MRs. `tab`: "crear" (Issue/Epic nuevos) | "vincular" (a una tarea existente).
   // `rootDir` = directorio raíz donde conviven los clones; `repos` = lo escaneado por local:repos.
   // `form` = formulario de "Crear tarea" abierto para un repo (null = listado). Ver openLocalForm.
-  local: { tab: "crear", rootDir: null, repos: [], loading: false, info: {}, selected: new Set(), form: null },
+  local: { tab: "crear", rootDir: null, repos: [], loading: false, info: {}, selected: new Set(), form: null, linkForm: null },
   prSnapshot: null, // nº → {reviewDecision, checks, reviewMe} para detectar cambios y notificar
   cursor: -1, // selección con teclado (j/k) en la lista
   draftKeys: new Set(), // "owner/repo#n" con borradores guardados → badge 📝 en la lista
@@ -3585,6 +3585,7 @@ function renderLocal() {
     return;
   }
   if (l.form) return renderLocalForm();
+  if (l.linkForm) return renderLocalLinkForm();
   const isCrear = l.tab === "crear";
   const desc = isCrear
     ? "Elige repo y rama/worktree de tu local para crear una <b>Issue/Epic</b> nueva y su <b>MR</b>."
@@ -3623,7 +3624,7 @@ function renderLocal() {
         : `<span class="local-cur">⎇ ${esc(info.current || "—")}</span>
            ${info.dirty ? `<span class="local-dirty" title="Cambios sin commitear">● sucio</span>` : ""}
            <span class="local-count">${(info.branches || []).length} ramas · ${(info.worktrees || []).length} worktrees</span>`;
-      const selectable = isCrear && r.gitlabPath;
+      const selectable = Boolean(r.gitlabPath);
       const checked = l.selected.has(r.dir);
       return `
         <div class="local-repo ${selectable ? "selectable" : ""} ${checked ? "checked" : ""}" ${selectable ? `data-dir="${esc(r.dir)}"` : ""}>
@@ -3637,18 +3638,15 @@ function renderLocal() {
     })
     .join("");
 
-  const vincularNote = isCrear
-    ? ""
-    : `<div class="local-soon">El flujo de <b>vincular</b> a una Issue/Epic existente llega en la siguiente fase. De momento puedes ver tus repos locales aquí.</div>`;
-
-  const selCount = isCrear ? l.selected.size : 0;
-  const actionBar =
-    isCrear && repos.some((r) => r.gitlabPath)
-      ? `<div class="local-actionbar">
-          <span class="local-selcount">${selCount} seleccionado${selCount === 1 ? "" : "s"}${selCount > 1 ? " · se creará una Epic" : ""}</span>
-          <button class="btn btn-primary" id="local-continue" ${selCount ? "" : "disabled"}>${selCount > 1 ? "Crear épica →" : "Crear tarea →"}</button>
-        </div>`
-      : "";
+  const selCount = l.selected.size;
+  const btnLabel = isCrear ? (selCount > 1 ? "Crear épica →" : "Crear tarea →") : "Vincular →";
+  const selNote = isCrear && selCount > 1 ? " · se creará una Epic" : "";
+  const actionBar = repos.some((r) => r.gitlabPath)
+    ? `<div class="local-actionbar">
+        <span class="local-selcount">${selCount} seleccionado${selCount === 1 ? "" : "s"}${selNote}</span>
+        <button class="btn btn-primary" id="local-continue" ${selCount ? "" : "disabled"}>${btnLabel}</button>
+      </div>`
+    : "";
 
   list.innerHTML =
     head +
@@ -3656,7 +3654,6 @@ function renderLocal() {
       <span class="local-root-path" title="${esc(l.rootDir)}">📁 ${esc(l.rootDir)}</span>
       <button class="btn local-change" id="local-pick">Cambiar…</button>
     </div>
-    ${vincularNote}
     ${repos.length ? `<div class="local-repos">${cards}</div>` : `<div class="local-empty"><p>No se han encontrado repos git directamente bajo ese directorio.</p></div>`}
     ${actionBar}`;
   $("#local-pick")?.addEventListener("click", pickLocalRoot);
@@ -3668,7 +3665,7 @@ function renderLocal() {
       renderLocal();
     }),
   );
-  $("#local-continue")?.addEventListener("click", () => openLocalForm([...l.selected]));
+  $("#local-continue")?.addEventListener("click", () => (isCrear ? openLocalForm([...l.selected]) : openLocalLinkForm([...l.selected])));
   notifySelftestOnce();
 }
 
@@ -3949,6 +3946,194 @@ async function openLocalMrInPulpo(mr) {
   }
 }
 
+// ----- Vincular tarea: crear MR(s) ligadas a una Issue/Epic existente -----
+function openLocalLinkForm(dirs) {
+  const l = state.local;
+  const projects = (Array.isArray(dirs) ? dirs : [dirs])
+    .map((dir) => {
+      const repo = (l.repos || []).find((r) => r.dir === dir);
+      if (!repo) return null;
+      const info = l.info[dir] || {};
+      return { repo, info, sourceBranch: info.current || (info.branches?.[0]?.name ?? ""), targetBranch: "development", title: "" };
+    })
+    .filter(Boolean);
+  if (!projects.length) return;
+  l.linkForm = { projects, issue: null, search: "", searching: false, results: [], push: true, creating: false, result: null, error: null };
+  renderLocal();
+}
+
+function closeLocalLinkForm() {
+  state.local.linkForm = null;
+  renderLocal();
+}
+
+function syncLocalLinkForm() {
+  const f = state.local.linkForm;
+  if (!f) return;
+  f.search = $("#llf-search")?.value ?? f.search;
+  f.push = $("#llf-push") ? $("#llf-push").checked : f.push;
+  f.projects.forEach((p, i) => {
+    p.sourceBranch = $(`#llf-source-${i}`)?.value ?? p.sourceBranch;
+    p.targetBranch = ($(`#llf-target-${i}`)?.value ?? p.targetBranch).trim();
+    p.title = $(`#llf-title-${i}`)?.value ?? p.title;
+  });
+}
+
+function renderLocalLinkForm() {
+  const f = state.local.linkForm;
+  if (f.result) return renderLinkResult();
+  const resultsHtml = f.searching
+    ? `<div class="loading">Buscando…</div>`
+    : f.results.length
+      ? f.results
+          .map(
+            (r) => `<button class="llf-issue ${f.issue && f.issue.url === r.url ? "on" : ""}" data-url="${esc(r.url)}">
+            <span class="local-badge ${r.isEpic ? "" : "ok"}">${r.isEpic ? "Epic" : "Issue"}</span>
+            <span class="llf-issue-title">${esc(r.title)}</span>
+            <span class="muted">${esc(r.projectPath)}#${esc(String(r.iid))}</span>
+          </button>`,
+          )
+          .join("")
+      : f.search
+        ? `<div class="muted lf-field">Sin resultados.</div>`
+        : "";
+  const projBlocks = f.projects
+    .map((p, i) => {
+      const branches = p.info.branches || [];
+      const opts = branches.length
+        ? branches.map((b) => `<option value="${esc(b.name)}" ${b.name === p.sourceBranch ? "selected" : ""}>${esc(b.name)}</option>`).join("")
+        : `<option value="${esc(p.sourceBranch)}">${esc(p.sourceBranch || "—")}</option>`;
+      return `<div class="lf-proj">
+        <div class="lf-proj-name"><span class="local-name">${esc(p.repo.name)}</span> <span class="local-badge ok">${esc(p.repo.gitlabPath)}</span></div>
+        <div class="lf-row">
+          <label>Rama origen<select id="llf-source-${i}">${opts}</select></label>
+          <label>Rama destino<input id="llf-target-${i}" type="text" value="${esc(p.targetBranch)}" placeholder="development" /></label>
+        </div>
+        <label class="lf-field">Título de la MR<input id="llf-title-${i}" type="text" value="${esc(p.title)}" placeholder="Título de la MR" /></label>
+      </div>`;
+    })
+    .join("");
+  list.innerHTML = `
+    <div class="local-head">
+      <h2>Vincular tarea · ${f.projects.length} proyecto${f.projects.length === 1 ? "" : "s"}</h2>
+      <p class="local-desc">Busca una <b>Issue o Epic</b> existente y crea una <b>MR</b> en cada proyecto vinculada a ella.</p>
+    </div>
+    <div class="lf">
+      ${f.error ? `<div class="error-box">${esc(f.error)}</div>` : ""}
+      <label class="lf-field">Issue / Epic destino<input id="llf-search" type="text" value="${esc(f.search)}" placeholder="Buscar por título… (Enter)" /></label>
+      <div class="llf-results">${resultsHtml}</div>
+      ${f.issue ? `<div class="llf-chosen">Vinculando a: <b>${esc(f.issue.title)}</b> <span class="muted">${esc(f.issue.projectPath)}#${esc(String(f.issue.iid))}</span></div>` : ""}
+      ${projBlocks}
+      <label class="lf-check"><input type="checkbox" id="llf-push" ${f.push ? "checked" : ""} /> Hacer push de las ramas antes de crear las MR</label>
+      <div class="lf-actions">
+        <button class="btn" id="llf-cancel">← Volver</button>
+        <button class="btn btn-primary" id="llf-create" ${f.creating || !f.issue ? "disabled" : ""}>${f.creating ? "Creando…" : "Crear MR(s)"}</button>
+      </div>
+    </div>`;
+  $("#llf-cancel").addEventListener("click", closeLocalLinkForm);
+  $("#llf-search").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); searchLinkIssues(); } });
+  list.querySelectorAll(".llf-issue").forEach((b) =>
+    b.addEventListener("click", () => {
+      syncLocalLinkForm();
+      f.issue = f.results.find((r) => r.url === b.dataset.url) || null;
+      if (f.issue && f.projects.every((p) => !p.title)) f.projects.forEach((p) => (p.title = f.issue.title));
+      renderLocal();
+    }),
+  );
+  $("#llf-create").addEventListener("click", confirmLinkTask);
+  notifySelftestOnce();
+}
+
+async function searchLinkIssues() {
+  const f = state.local.linkForm;
+  syncLocalLinkForm();
+  if (!f.search.trim()) { f.results = []; renderLocal(); return; }
+  f.searching = true;
+  f.error = null;
+  renderLocal();
+  try {
+    f.results = await window.pulpo.localSearchIssues(f.search.trim());
+  } catch (err) {
+    f.error = String(err.message || err);
+    f.results = [];
+  } finally {
+    f.searching = false;
+    renderLocal();
+  }
+}
+
+function confirmLinkTask() {
+  const f = state.local.linkForm;
+  syncLocalLinkForm();
+  if (!f.issue) { f.error = "Elige una Issue/Epic."; renderLocal(); return; }
+  if (f.projects.some((p) => !p.title.trim())) { f.error = "Cada proyecto necesita un título de MR."; renderLocal(); return; }
+  const root = $("#modal-root");
+  root.innerHTML = `
+    <div class="modal-backdrop" id="modal-backdrop">
+      <div class="modal">
+        <h3>↗ Vincular en GitLab</h3>
+        <p class="muted">Se crearán ${f.projects.length} MR vinculadas a <b>${esc(f.issue.title)}</b> (${esc(f.issue.projectPath)}#${esc(String(f.issue.iid))})${f.push ? ", tras <b>pushear</b> las ramas" : ""}. Acción irreversible.</p>
+        <div class="modal-actions">
+          <button class="btn" id="modal-cancel">Cancelar</button>
+          <button class="btn btn-primary" id="modal-confirm">Crear en GitLab</button>
+        </div>
+      </div>
+    </div>`;
+  $("#modal-cancel").addEventListener("click", () => (root.innerHTML = ""));
+  $("#modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "modal-backdrop") root.innerHTML = ""; });
+  $("#modal-confirm").addEventListener("click", () => { root.innerHTML = ""; createLinkTask(); });
+}
+
+async function createLinkTask() {
+  const f = state.local.linkForm;
+  f.creating = true;
+  f.error = null;
+  renderLocal();
+  try {
+    f.result = await window.pulpo.localLinkTask({
+      issue: f.issue,
+      projects: f.projects.map((p) => ({ dir: p.repo.dir, projectPath: p.repo.gitlabPath, sourceBranch: p.sourceBranch, targetBranch: p.targetBranch, title: p.title.trim(), push: f.push })),
+    });
+    const ok = f.result.results.filter((x) => x.ok).length;
+    toast(`${ok}/${f.result.results.length} MR creadas ✓`, ok === f.result.results.length ? "ok" : "warn");
+  } catch (err) {
+    f.error = String(err.message || err);
+    toast("Error al vincular", "err");
+  } finally {
+    f.creating = false;
+    renderLocal();
+  }
+}
+
+function renderLinkResult() {
+  const f = state.local.linkForm;
+  const { issue, results } = f.result;
+  const primaryMr = (results.find((r) => r.ok) || {}).mr || null;
+  const rows = results
+    .map((r) =>
+      r.ok
+        ? `<div class="lf-result-card"><span class="lf-result-k">${esc(r.projectPath)}</span>${extLink(r.mr.url, `!${r.mr.number} · ${r.mr.title}`)}</div>`
+        : `<div class="lf-result-card err"><span class="lf-result-k">${esc(r.projectPath)}</span><span class="local-err">${esc(r.error)}</span></div>`,
+    )
+    .join("");
+  list.innerHTML = `
+    <div class="local-head"><h2>✓ MR(s) vinculadas</h2></div>
+    <div class="lf-result">
+      <div class="lf-result-card"><span class="lf-result-k">${issue.isEpic ? "Epic" : "Issue"}</span>${extLink(issue.url, `${issue.projectPath}#${issue.iid} · ${issue.title}`)}</div>
+      ${rows}
+      <div class="lf-actions">
+        <button class="btn" id="llf-back">Volver al listado</button>
+        ${primaryMr ? `<button class="btn btn-accent" id="llf-openmr">Ver MR en Pulpo</button>` : ""}
+      </div>
+    </div>`;
+  list.querySelectorAll("a[data-ext]").forEach((a) =>
+    a.addEventListener("click", (e) => { e.preventDefault(); window.pulpo.openExternal(a.getAttribute("href")); }),
+  );
+  $("#llf-back").addEventListener("click", () => { state.local.selected.clear(); closeLocalLinkForm(); });
+  if (primaryMr) $("#llf-openmr").addEventListener("click", () => openLocalMrInPulpo(primaryMr));
+  notifySelftestOnce();
+}
+
 /* ============ arranque ============ */
 function renderRepoSelect() {
   const select = $("#repo-select");
@@ -4021,6 +4206,22 @@ async function boot() {
   if (IS_SELFTEST && SELFTEST_ROUTE === "milestones-summary") runMilestonesSummarySelftest();
   if (IS_SELFTEST && SELFTEST_ROUTE === "releases") enterReleases();
   if (IS_SELFTEST && SELFTEST_ROUTE === "local") runLocalSelftest();
+  if (IS_SELFTEST && SELFTEST_ROUTE === "local-vincular") runLocalLinkSelftest();
+}
+
+// Selftest del flujo Vincular: abre la pestaña y el formulario con 2 proyectos (sin buscar/crear nada).
+async function runLocalLinkSelftest() {
+  state.selftestNotified = true;
+  try {
+    await enterLocal("vincular");
+    const gl = (state.local.repos || []).filter((r) => r.gitlabPath).slice(0, 2);
+    if (gl.length) openLocalLinkForm(gl.map((r) => r.dir));
+  } catch (err) {
+    console.error("[selftest] local-vincular failed:", err);
+  } finally {
+    state.selftestNotified = false;
+    notifySelftestOnce();
+  }
 }
 
 // Selftest de Trabajo local: abre la pestaña Crear y el formulario del primer repo casado, para

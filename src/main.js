@@ -18,7 +18,7 @@ const SELFTEST_ROUTE = (process.argv.find((a) => a.startsWith("--selftest-route=
 // La ruta de resumen espera a una IA (lenta con Opus); la de releases proxea los avatares del grupo
 // entero (groupProjects). Ambas necesitan más margen que los 20s por defecto.
 const SELFTEST_TIMEOUT_MS =
-  SELFTEST_ROUTE === "milestones-summary" ? 240000 : SELFTEST_ROUTE === "releases" || SELFTEST_ROUTE === "local" ? 60000 : 20000;
+  SELFTEST_ROUTE === "milestones-summary" ? 240000 : SELFTEST_ROUTE === "releases" || SELFTEST_ROUTE === "local" || SELFTEST_ROUTE === "local-vincular" ? 60000 : 20000;
 
 let win = null;
 
@@ -269,6 +269,34 @@ function wireIpc() {
       }
     }
     return { epic, results };
+  });
+  // Busca Issues/Epics abiertas del grupo (para el flujo Vincular tarea).
+  ipcMain.handle("local:searchIssues", async (_event, { query }) => gh().searchGroupIssues(query));
+  // Orquesta el flujo Vincular: por cada proyecto push → MR vinculada a la Issue/Epic existente.
+  // Misma proyecto que la issue → "Closes #iid" (auto-cierra); otro proyecto/Epic → referencia cruzada.
+  ipcMain.handle("local:linkTask", async (_event, { issue, projects }) => {
+    const branchRe = /^[\w./-]{1,200}$/;
+    const projRe = /^[\w.-]+(\/[\w.-]+)*$/;
+    const list = Array.isArray(projects) ? projects : [];
+    if (!issue || !issue.iid || !projRe.test(issue.projectPath || "")) throw new Error("Issue/Epic destino no válida");
+    if (!list.length) throw new Error("Selecciona al menos un repo");
+    const issueRef = `${issue.projectPath}#${issue.iid}`;
+    const results = [];
+    for (const p of list) {
+      try {
+        localRootGuard(p.dir);
+        if (!projRe.test(p.projectPath || "")) throw new Error("Proyecto no válido");
+        if (!branchRe.test(p.sourceBranch || "") || !branchRe.test(p.targetBranch || "")) throw new Error("Rama no válida");
+        if (!p.title || !String(p.title).trim()) throw new Error("Falta el título de la MR");
+        if (p.push) await local.pushBranch(p.dir, p.sourceBranch);
+        const link = issue.projectPath === p.projectPath ? `Closes #${issue.iid}` : `Relacionada con ${issueRef}`;
+        const mr = await gh().createMergeRequest(p.projectPath, { sourceBranch: p.sourceBranch, targetBranch: p.targetBranch, title: String(p.title).trim(), description: `${link}\n` });
+        results.push({ projectPath: p.projectPath, ok: true, mr });
+      } catch (err) {
+        results.push({ projectPath: p.projectPath, ok: false, error: String(err.message || err) });
+      }
+    }
+    return { issue, results };
   });
 
   ipcMain.handle("prs:list", async (_event, { repo, states }) => gh().listPRs(repo, states));

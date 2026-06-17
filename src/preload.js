@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("pulpo", {
   localCreateTask: (payload) => ipcRenderer.invoke("local:createTask", payload),
   localProposeEpic: (payload) => ipcRenderer.invoke("local:proposeEpic", payload),
   localCreateEpicTask: (payload) => ipcRenderer.invoke("local:createEpicTask", payload),
+  localSearchIssues: (query) => ipcRenderer.invoke("local:searchIssues", { query }),
+  localLinkTask: (payload) => ipcRenderer.invoke("local:linkTask", payload),
   listPRs: (repo, states) => ipcRenderer.invoke("prs:list", { repo, states }),
   searchPRs: (repos, states) => ipcRenderer.invoke("prs:search", { repos, states }),
   prDetail: (repo, number) => ipcRenderer.invoke("pr:detail", { repo, number }),

@@ -439,6 +439,10 @@ async function createEpic() {
   throw new Error("Crear epics desde Trabajo local solo está disponible en GitLab.");
 }
 
+async function searchGroupIssues() {
+  throw new Error("Vincular tareas desde Trabajo local solo está disponible en GitLab.");
+}
+
 async function revertPullRequest(prNodeId) {
   const data = await gql(
     `mutation ($id: ID!) {
@@ -516,4 +520,5 @@ module.exports = {
   createIssue,
   createMergeRequest,
   createEpic,
+  searchGroupIssues,
 };
