@@ -7,6 +7,7 @@ const ai = require("./ai");
 const config = require("./config");
 const drafts = require("./drafts");
 const local = require("./local");
+const localHistory = require("./localhistory");
 const provider = require("./provider");
 
 // Proveedor activo (GitHub o GitLab) según config; se resuelve en cada llamada.
@@ -18,7 +19,7 @@ const SELFTEST_ROUTE = (process.argv.find((a) => a.startsWith("--selftest-route=
 // La ruta de resumen espera a una IA (lenta con Opus); la de releases proxea los avatares del grupo
 // entero (groupProjects). Ambas necesitan más margen que los 20s por defecto.
 const SELFTEST_TIMEOUT_MS =
-  SELFTEST_ROUTE === "milestones-summary" ? 240000 : SELFTEST_ROUTE === "releases" || SELFTEST_ROUTE === "local" || SELFTEST_ROUTE === "local-vincular" ? 60000 : 20000;
+  SELFTEST_ROUTE === "milestones-summary" ? 240000 : SELFTEST_ROUTE === "releases" || SELFTEST_ROUTE.startsWith("local") ? 60000 : 20000;
 
 let win = null;
 
@@ -247,6 +248,7 @@ function wireIpc() {
       title: String(title).trim(),
       description: `Closes #${issue.iid}\n\n${description || ""}${checklistMd}`,
     });
+    localHistory.add({ kind: "tarea", title: issue.title, projectPath, issue, mr, commit });
     return { issue, commit, branch, mr };
   });
   // Propuesta IA para una Epic multiproyecto: calcula el diff de cada proyecto y se lo pasa a la IA.
@@ -293,6 +295,7 @@ function wireIpc() {
         results.push({ projectPath: p.projectPath, ok: false, error: String(err.message || err) });
       }
     }
+    localHistory.add({ kind: "epic", title: epic.title, epic, results });
     return { epic, results };
   });
   // Busca Issues/Epics abiertas del grupo (para el flujo Vincular tarea).
@@ -321,8 +324,13 @@ function wireIpc() {
         results.push({ projectPath: p.projectPath, ok: false, error: String(err.message || err) });
       }
     }
+    localHistory.add({ kind: "vincular", title: issue.title, issue, results });
     return { issue, results };
   });
+  // Histórico local de trabajos creados (tareas/epics/vinculaciones) con sus enlaces de GitLab.
+  ipcMain.handle("localHistory:list", () => localHistory.load());
+  ipcMain.handle("localHistory:remove", (_event, { id }) => localHistory.remove(id));
+  ipcMain.handle("localHistory:clear", () => localHistory.clear());
 
   ipcMain.handle("prs:list", async (_event, { repo, states }) => gh().listPRs(repo, states));
   ipcMain.handle("prs:search", async (_event, { repos, states }) => gh().searchPRs(repos, states));

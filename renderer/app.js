@@ -38,7 +38,7 @@ const state = {
   // Issues/Epics + MRs. `tab`: "crear" (Issue/Epic nuevos) | "vincular" (a una tarea existente).
   // `rootDir` = directorio raíz donde conviven los clones; `repos` = lo escaneado por local:repos.
   // `form` = formulario de "Crear tarea" abierto para un repo (null = listado). Ver openLocalForm.
-  local: { tab: "crear", rootDir: null, repos: [], loading: false, info: {}, selected: new Set(), form: null, linkForm: null },
+  local: { tab: "crear", rootDir: null, repos: [], loading: false, info: {}, selected: new Set(), form: null, linkForm: null, history: [] },
   prSnapshot: null, // nº → {reviewDecision, checks, reviewMe} para detectar cambios y notificar
   cursor: -1, // selección con teclado (j/k) en la lista
   draftKeys: new Set(), // "owner/repo#n" con borradores guardados → badge 📝 en la lista
@@ -3538,10 +3538,27 @@ async function enterLocal(tab) {
   }
   state.view = "local";
   if (tab) state.local.tab = tab;
+  state.local.form = null;
+  state.local.linkForm = null;
   closeDetail();
   document.querySelectorAll(".bucket").forEach((b) => b.classList.remove("active"));
-  $(state.local.tab === "vincular" ? "#bucket-local-vincular" : "#bucket-local-crear")?.classList.add("active");
-  await loadLocal();
+  const bucketByTab = { vincular: "#bucket-local-vincular", historico: "#bucket-local-historico", crear: "#bucket-local-crear" };
+  $(bucketByTab[state.local.tab] || "#bucket-local-crear")?.classList.add("active");
+  if (state.local.tab === "historico") await loadLocalHistory();
+  else await loadLocal();
+}
+
+async function loadLocalHistory() {
+  const l = state.local;
+  l.loading = true;
+  renderLocal();
+  try {
+    l.history = await window.pulpo.localHistoryList();
+  } catch {
+    l.history = [];
+  }
+  l.loading = false;
+  renderLocal();
 }
 
 async function loadLocal() {
@@ -3577,6 +3594,59 @@ async function pickLocalRoot() {
   if (rootDir) await loadLocal();
 }
 
+const KIND_LABEL = { tarea: "Tarea", epic: "Epic", vincular: "Vinculación" };
+
+function renderLocalHistory() {
+  const entries = state.local.history || [];
+  const head = `
+    <div class="local-head">
+      <h2>Histórico</h2>
+      <p class="local-desc">Trabajos creados desde Trabajo local, con los enlaces de GitLab de cada item.</p>
+    </div>`;
+  if (!entries.length) {
+    list.innerHTML = head + `<div class="local-empty"><p>Aún no has creado ninguna tarea desde aquí.</p></div>`;
+    notifySelftestOnce();
+    return;
+  }
+  const line = (k, html) => `<div class="lh-line"><span class="lh-k">${k}</span>${html}</div>`;
+  const projLines = (results, withTask) =>
+    (results || [])
+      .map((r) =>
+        r.ok
+          ? line(esc(r.projectPath), `${withTask && r.task ? `${extLink(r.task.url, `#${r.task.iid}`)} · ` : ""}${extLink(r.mr.url, `!${r.mr.number}`)}${r.commit ? ` · ${extLink(r.commit.url, `commit ${r.commit.sha.slice(0, 8)}`)}` : ""}`)
+          : `<div class="lh-line err"><span class="lh-k">${esc(r.projectPath)}</span><span class="local-err">${esc(r.error)}</span></div>`,
+      )
+      .join("");
+  const cards = entries
+    .map((e) => {
+      const date = (() => { try { return new Date(e.ts).toLocaleString("es-ES", { dateStyle: "medium", timeStyle: "short" }); } catch { return e.ts || ""; } })();
+      let items = "";
+      if (e.kind === "tarea") {
+        items = line("Issue", extLink(e.issue.url, `#${e.issue.iid} · ${e.issue.title}`)) + line("MR", extLink(e.mr.url, `!${e.mr.number}`)) + (e.commit ? line("Commit", extLink(e.commit.url, e.commit.sha.slice(0, 8))) : "");
+      } else if (e.kind === "epic") {
+        items = line("Epic", extLink(e.epic.url, `#${e.epic.iid} · ${e.epic.title}`)) + projLines(e.results, true);
+      } else {
+        items = line(e.issue.isEpic ? "Epic" : "Issue", extLink(e.issue.url, `${e.issue.projectPath}#${e.issue.iid} · ${e.issue.title}`)) + projLines(e.results, false);
+      }
+      return `
+        <div class="lh-card">
+          <div class="lh-head">
+            <span class="lh-kind lh-${esc(e.kind)}">${KIND_LABEL[e.kind] || esc(e.kind)}</span>
+            <span class="lh-title">${esc(e.title || "(sin título)")}</span>
+            <span class="lh-date">${esc(date)}</span>
+            <button class="lh-del" data-id="${esc(e.id)}" title="Quitar del histórico">✕</button>
+          </div>
+          <div class="lh-items">${items}</div>
+        </div>`;
+    })
+    .join("");
+  list.innerHTML = head + `<div class="lh-toolbar"><button class="btn local-change" id="lh-clear">Vaciar histórico</button></div><div class="lh-list">${cards}</div>`;
+  list.querySelectorAll("a[data-ext]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); window.pulpo.openExternal(a.getAttribute("href")); }));
+  list.querySelectorAll(".lh-del").forEach((b) => b.addEventListener("click", async () => { state.local.history = await window.pulpo.localHistoryRemove(b.dataset.id); renderLocal(); }));
+  $("#lh-clear")?.addEventListener("click", async () => { state.local.history = await window.pulpo.localHistoryClear(); renderLocal(); });
+  notifySelftestOnce();
+}
+
 function renderLocal() {
   if (state.view !== "local") return;
   const l = state.local;
@@ -3586,6 +3656,7 @@ function renderLocal() {
   }
   if (l.form) return renderLocalForm();
   if (l.linkForm) return renderLocalLinkForm();
+  if (l.tab === "historico") return renderLocalHistory();
   const isCrear = l.tab === "crear";
   const desc = isCrear
     ? "Elige repo y rama/worktree de tu local para crear una <b>Issue/Epic</b> nueva y su <b>MR</b>."
@@ -4293,6 +4364,7 @@ async function boot() {
     $("#nav-local-section")?.classList.add("hidden");
     $("#bucket-local-crear")?.classList.add("hidden");
     $("#bucket-local-vincular")?.classList.add("hidden");
+    $("#bucket-local-historico")?.classList.add("hidden");
   }
 
   const auth = await window.pulpo.authStatus();
@@ -4319,6 +4391,37 @@ async function boot() {
   if (IS_SELFTEST && SELFTEST_ROUTE === "releases") enterReleases();
   if (IS_SELFTEST && SELFTEST_ROUTE === "local") runLocalSelftest();
   if (IS_SELFTEST && SELFTEST_ROUTE === "local-vincular") runLocalLinkSelftest();
+  if (IS_SELFTEST && SELFTEST_ROUTE === "local-historico") runLocalHistorySelftest();
+}
+
+// Selftest del histórico: siembra entradas de ejemplo (no toca disco) para capturar la vista.
+async function runLocalHistorySelftest() {
+  state.selftestNotified = true;
+  try {
+    await enterLocal("historico");
+    const base = "https://gitlab.openhealth.es";
+    state.local.history = [
+      { id: "s1", ts: new Date().toISOString(), kind: "tarea", title: "Exportar pedidos a CSV", projectPath: "OpenSaludGroup/dashboard",
+        issue: { iid: 142, url: `${base}/OpenSaludGroup/dashboard/-/issues/142`, title: "Exportar pedidos a CSV" },
+        mr: { number: 318, url: `${base}/OpenSaludGroup/dashboard/-/merge_requests/318` },
+        commit: { sha: "a1b2c3d4e5f6", url: `${base}/OpenSaludGroup/dashboard/-/commit/a1b2c3d4e5f6` } },
+      { id: "s2", ts: new Date(Date.now() - 3600e3).toISOString(), kind: "epic", title: "Unificar autenticación SSO",
+        epic: { iid: 27, url: `${base}/OpenSaludGroup/epics/-/issues/27`, title: "Unificar autenticación SSO" },
+        results: [
+          { ok: true, projectPath: "OpenSaludGroup/dashboard", task: { iid: 143, url: `${base}/OpenSaludGroup/dashboard/-/issues/143` }, mr: { number: 319, url: `${base}/OpenSaludGroup/dashboard/-/merge_requests/319` }, commit: { sha: "bb22cc33", url: `${base}/x/-/commit/bb22cc33` } },
+          { ok: true, projectPath: "libraries/JWTToken", task: { iid: 12, url: `${base}/libraries/JWTToken/-/issues/12` }, mr: { number: 44, url: `${base}/libraries/JWTToken/-/merge_requests/44` }, commit: null },
+        ] },
+      { id: "s3", ts: new Date(Date.now() - 86400e3).toISOString(), kind: "vincular", title: "Corrige caché de catálogo",
+        issue: { iid: 90, projectPath: "OpenSaludGroup/dashboard", isEpic: false, url: `${base}/OpenSaludGroup/dashboard/-/issues/90`, title: "Corrige caché de catálogo" },
+        results: [{ ok: true, projectPath: "OpenSaludGroup/dashboard", mr: { number: 320, url: `${base}/OpenSaludGroup/dashboard/-/merge_requests/320` }, commit: null }] },
+    ];
+    renderLocal();
+  } catch (err) {
+    console.error("[selftest] local-historico failed:", err);
+  } finally {
+    state.selftestNotified = false;
+    notifySelftestOnce();
+  }
 }
 
 // Selftest del flujo Vincular: abre la pestaña y el formulario con 2 proyectos (sin buscar/crear nada).
@@ -4408,6 +4511,7 @@ $("#bucket-milestones").addEventListener("click", enterMilestones);
 $("#bucket-releases").addEventListener("click", enterReleases);
 $("#bucket-local-crear").addEventListener("click", () => enterLocal("crear"));
 $("#bucket-local-vincular").addEventListener("click", () => enterLocal("vincular"));
+$("#bucket-local-historico").addEventListener("click", () => enterLocal("historico"));
 /* ============ paleta de comandos (⌘K) ============ */
 function paletteEntries() {
   const entries = [];
@@ -4423,6 +4527,7 @@ function paletteEntries() {
   if (isGitlab()) entries.push({ label: "Ir a: Releases", hint: "generar release branches", run: enterReleases });
   if (isGitlab()) entries.push({ label: "Trabajo local: Crear tarea", hint: "Issue/Epic + MR desde local", run: () => enterLocal("crear") });
   if (isGitlab()) entries.push({ label: "Trabajo local: Vincular tarea", hint: "vincular local a una tarea existente", run: () => enterLocal("vincular") });
+  if (isGitlab()) entries.push({ label: "Trabajo local: Histórico", hint: "trabajos creados desde Pulpo", run: () => enterLocal("historico") });
   for (const [bucket, label] of [["open", "Abiertas"], ["mine", "Mías"], ["review", "Para revisar"], ["draft", "Borradores"], ["merged", "Fusionadas"], ["closed", "Cerradas"]]) {
     entries.push({ label: `Ir a: ${label}`, hint: "bucket", run: () => switchBucket(bucket) });
   }

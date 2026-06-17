@@ -1252,3 +1252,20 @@ div.lf-proj { border: 1px solid var(--border); border-radius: 10px; padding: 10p
 .lf-feat { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; background: var(--yellow-bg, var(--bg-hover)); border: 1px solid var(--border); border-radius: 8px; }
 .lf-feat code { background: var(--bg-hover); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
 .lf-nb { font: inherit; font-size: 13px; color: var(--text); background: var(--bg-raised); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
+
+/* Histórico de Trabajo local */
+.lh-toolbar { display: flex; justify-content: flex-end; margin: 0 20px 8px; }
+.lh-list { display: flex; flex-direction: column; gap: 10px; margin: 0 20px 28px; }
+.lh-card { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-raised); padding: 10px 14px; }
+.lh-head { display: flex; align-items: center; gap: 10px; }
+.lh-kind { font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
+.lh-kind.lh-tarea { color: var(--accent); border-color: var(--accent); }
+.lh-kind.lh-epic { color: var(--green); border-color: var(--green); background: var(--green-bg); }
+.lh-title { flex: 1; font-weight: 600; font-size: 14px; }
+.lh-date { font-size: 12px; color: var(--text-muted); }
+.lh-del { font: inherit; border: none; background: transparent; color: var(--text-muted); cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+.lh-del:hover { background: var(--bg-hover); color: var(--red); }
+.lh-items { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.lh-line { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.lh-line.err { color: var(--red); }
+.lh-k { min-width: 150px; font-size: 12px; color: var(--text-muted); }
