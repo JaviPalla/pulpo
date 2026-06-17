@@ -878,6 +878,21 @@ async function collapseMilestoneEpics(issues) {
   return items;
 }
 
+/**
+ * Crea un snippet personal de GitLab con el resumen en Markdown y devuelve su URL
+ * compartible. GitLab renderiza el .md (enlaces y refs vivos), así el correo pasa de
+ * pegar títulos a pegar UN enlace. Visibilidad `internal`: cualquiera logueado en la
+ * instancia puede verlo (no público, no privado al autor). Solo GitLab.
+ */
+async function createSnippet({ title, contentMarkdown }) {
+  const snippet = await api("POST", "/snippets", {
+    title: title || "Novedades",
+    visibility: "internal",
+    files: [{ file_path: "novedades.md", content: contentMarkdown || "" }],
+  });
+  return { url: snippet.web_url };
+}
+
 module.exports = {
   resolveToken,
   invalidateTokenCache,
@@ -912,4 +927,5 @@ module.exports = {
   collapseMilestoneEpics,
   releaseDefaults,
   generateReleaseBranches,
+  createSnippet,
 };

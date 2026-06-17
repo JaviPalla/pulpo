@@ -2746,6 +2746,14 @@ function summaryEmailContent(title, included) {
   return { heading, itemHtml, richHtml, plain };
 }
 
+// Cuerpo Markdown del resumen para publicarlo como snippet de GitLab (lo renderiza:
+// enlaces vivos, refs auto-expandidas). El correo pasa a ser solo el enlace al snippet.
+function summaryEmailMarkdown(title, included) {
+  const heading = `Novedades — ${title}`;
+  const lines = included.map((h) => `- ${h.kind === "epic" ? "📦 " : ""}[${h.headline}](${h.url})`);
+  return `# ${heading}\n\n${lines.join("\n")}\n`;
+}
+
 // Vista (HTML) de la sub-pestaña Resumen. Estado: cargando IA / sin generar / generado.
 function milestoneSummaryHtml() {
   const m = state.milestones;
@@ -2827,7 +2835,10 @@ function milestoneSummaryHtml() {
     <div class="ms-sum-preview-wrap">
       <div class="ms-sum-preview-head">
         <span class="muted">Vista previa del correo</span>
-        <button class="btn btn-primary" id="ms-sum-copy">Copiar para el correo</button>
+        <span class="ms-sum-actions">
+          <button class="btn" id="ms-sum-copy">Copiar para el correo</button>
+          <button class="btn btn-primary" id="ms-sum-publish" title="Publica el resumen como snippet de GitLab y copia el enlace para el correo">Publicar enlace en GitLab</button>
+        </span>
       </div>
       <div class="ms-sum-preview collapsed" id="ms-sum-preview">${previewBody}</div>
       <button class="btn ghost ms-sum-readmore hidden" id="ms-sum-readmore">Leer más</button>
@@ -3003,6 +3014,33 @@ function wireMilestoneSummary() {
     }
     const { richHtml, plain } = summaryEmailContent(title, included);
     copyRich(richHtml, plain);
+  });
+
+  // Publica el resumen como snippet de GitLab (lo renderiza bonito y con URL propia) y
+  // copia el enlace al portapapeles: el correo pasa a ser una línea con el enlace.
+  $("#ms-sum-publish")?.addEventListener("click", async (event) => {
+    const btn = event.currentTarget;
+    const stored = loadSummary(title);
+    const included = (stored?.items || []).filter((it) => it.included);
+    if (!included.length) {
+      toast("No hay novedades incluidas para publicar", "");
+      return;
+    }
+    const markdown = summaryEmailMarkdown(title, included);
+    btn.disabled = true;
+    const prev = btn.textContent;
+    btn.textContent = "Publicando…";
+    try {
+      const { url } = await window.pulpo.publishMilestoneSnippet(`Novedades — ${title}`, markdown);
+      copyText(url);
+      toast("Snippet publicado · enlace copiado", "ok");
+      window.pulpo.openExternal(url);
+    } catch (err) {
+      toast(`Error publicando el snippet: ${String(err.message || err)}`, "err");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
   });
 
   // "Leer más": solo si el preview se desborda de su altura acotada. Mantiene el estado expandido

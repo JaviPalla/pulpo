@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld("pulpo", {
   groupProjects: () => ipcRenderer.invoke("issues:groupProjects"),
   updateIssue: (projectId, iid, patch) => ipcRenderer.invoke("issues:update", { projectId, iid, patch }),
   summarizeMilestone: (milestoneTitle, issues) => ipcRenderer.invoke("milestones:summary", { milestoneTitle, issues }),
+  publishMilestoneSnippet: (title, contentMarkdown) => ipcRenderer.invoke("milestones:publishSnippet", { title, contentMarkdown }),
   releasesDefaults: () => ipcRenderer.invoke("releases:defaults"),
   generateReleaseBranches: (payload) => ipcRenderer.invoke("releases:generate", payload),
   openExternal: (url) => ipcRenderer.invoke("shell:open", url),

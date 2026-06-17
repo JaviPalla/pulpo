@@ -419,6 +419,10 @@ async function generateReleaseBranches() {
   throw new Error("La vista de Releases solo está disponible en GitLab.");
 }
 
+async function createSnippet() {
+  throw new Error("Publicar el resumen como snippet solo está disponible en GitLab.");
+}
+
 async function revertPullRequest(prNodeId) {
   const data = await gql(
     `mutation ($id: ID!) {
@@ -492,4 +496,5 @@ module.exports = {
   collapseMilestoneEpics,
   releaseDefaults,
   generateReleaseBranches,
+  createSnippet,
 };

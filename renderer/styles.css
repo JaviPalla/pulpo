@@ -714,6 +714,7 @@ body {
 
 /* Vista previa del correo: altura acotada plegable con "Leer más" + degradado al pie. */
 .ms-sum-preview-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.ms-sum-actions { display: flex; gap: 8px; }
 .ms-sum-preview { position: relative; padding: 14px 16px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px; }
 .ms-sum-preview.collapsed { max-height: 240px; overflow: hidden; }
 .ms-sum-preview.collapsed::after {

@@ -225,6 +225,9 @@ function wireIpc() {
     const items = await gh().collapseMilestoneEpics(issues || []);
     return ai.summarizeMilestone({ milestoneTitle, items });
   });
+  ipcMain.handle("milestones:publishSnippet", async (_event, { title, contentMarkdown }) =>
+    gh().createSnippet({ title, contentMarkdown }),
+  );
 
   ipcMain.handle("releases:defaults", async () => gh().releaseDefaults());
   ipcMain.handle("releases:generate", async (_event, { version, sourceBranch, projects, ouicare }) => {
