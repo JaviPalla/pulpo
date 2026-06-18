@@ -68,28 +68,45 @@ function localRootGuard(dir) {
   return root;
 }
 
-// Prepara la rama de una MR en un repo local: (opcional) crea una rama feature desde la actual,
-// commitea los cambios sin commitear con `commitMessage` + el "#<iid>" de la issue al final (para que
-// el commit quede linkado en GitLab) y hace push. Devuelve {branch, commit:{sha,url}|null}.
-async function prepareLocalBranch(dir, projectPath, { sourceBranch, newBranch, commitMessage, issueIid, push }) {
+// Prepara la rama de una MR en un repo local: (opcional) crea una rama feature, commitea los cambios
+// sin commitear (SIEMPRE que el working tree esté sucio — no se salta en silencio aunque no haya
+// mensaje: usa el fallback) con el "#<iid>" al final para linkar el commit, y hace push. Devuelve
+// {branch, commit:{sha,url}|null, steps:[]} — `steps` es el log de pasos para la vista de detalle.
+async function prepareLocalBranch(dir, projectPath, { sourceBranch, newBranch, commitMessage, issueIid, push, fallbackMessage }) {
   const branchRe = /^[\w./-]{1,200}$/;
+  const steps = [];
   let branch = sourceBranch;
   if (newBranch) {
     if (!branchRe.test(newBranch)) throw new Error("Nombre de rama nueva no válido");
     await local.createLocalBranch(dir, newBranch);
     branch = newBranch;
+    steps.push({ ok: true, text: `Rama feature creada: ${newBranch}` });
   }
   let commit = null;
-  if (commitMessage && String(commitMessage).trim()) {
-    const msg = issueIid ? `${String(commitMessage).trim()}\n\n#${issueIid}` : String(commitMessage).trim();
-    commit = await local.commitAll(dir, msg); // null si no había cambios que commitear
+  const dirty = await local.isDirty(dir);
+  if (dirty) {
+    // Importante: aunque no haya mensaje, NO nos saltamos el commit (era el bug del push silencioso).
+    const msgBase = (commitMessage && String(commitMessage).trim()) || (fallbackMessage && String(fallbackMessage).trim()) || "Cambios de la tarea";
+    const full = issueIid ? `${msgBase}\n\n#${issueIid}` : msgBase;
+    commit = await local.commitAll(dir, full);
     if (commit) {
       const base = (config.load().gitlabBaseUrl || "").replace(/\/+$/, "");
       commit.url = `${base}/${projectPath}/-/commit/${commit.sha}`;
+      steps.push({ ok: true, text: `Commit creado: ${commit.sha.slice(0, 8)} — "${msgBase}"` });
+    } else {
+      steps.push({ ok: false, text: "Había cambios pero no se pudo crear el commit" });
     }
+  } else {
+    steps.push({ ok: true, text: "Sin cambios locales que commitear" });
   }
-  if (push) await local.pushBranch(dir, branch);
-  return { branch, commit };
+  if (push) {
+    const res = await local.pushBranch(dir, branch);
+    const upToDate = /up-to-date|up to date/i.test(res.output || "");
+    steps.push({ ok: true, text: upToDate ? `Push de ${branch}: la rama ya estaba al día en origin` : `Push de ${branch} a origin: ok` });
+  } else {
+    steps.push({ ok: true, text: "Push omitido (desmarcado)" });
+  }
+  return { branch, commit, steps };
 }
 
 function wireIpc() {
@@ -241,15 +258,15 @@ function wireIpc() {
     const checklistMd = checkItems.length ? `\n\n## Puntos a comprobar\n${checkItems.map((c) => `- [ ] ${c.trim()}`).join("\n")}` : "";
     const safeLabels = (Array.isArray(labels) ? labels : []).filter((l) => typeof l === "string" && l.trim());
     const issue = await gh().createIssue(projectPath, { title: String(title).trim(), description: `${description || ""}${checklistMd}`, labels: safeLabels });
-    const { branch, commit } = await prepareLocalBranch(dir, projectPath, { sourceBranch, newBranch, commitMessage, issueIid: issue.iid, push });
+    const { branch, commit, steps } = await prepareLocalBranch(dir, projectPath, { sourceBranch, newBranch, commitMessage, issueIid: issue.iid, push, fallbackMessage: String(title).trim() });
     const mr = await gh().createMergeRequest(projectPath, {
       sourceBranch: branch,
       targetBranch,
       title: String(title).trim(),
       description: `Closes #${issue.iid}\n\n${description || ""}${checklistMd}`,
     });
-    localHistory.add({ kind: "tarea", title: issue.title, projectPath, issue, mr, commit });
-    return { issue, commit, branch, mr };
+    localHistory.add({ kind: "tarea", title: issue.title, projectPath, issue, mr, commit, steps });
+    return { issue, commit, branch, mr, steps };
   });
   // Propuesta IA para una Epic multiproyecto: calcula el diff de cada proyecto y se lo pasa a la IA.
   ipcMain.handle("local:proposeEpic", async (_event, { projects }) => {
@@ -283,14 +300,14 @@ function wireIpc() {
         const checkItems = (Array.isArray(p.checklist) ? p.checklist : []).filter((c) => typeof c === "string" && c.trim());
         const checklistMd = checkItems.length ? `\n\n## Puntos a comprobar\n${checkItems.map((c) => `- [ ] ${c.trim()}`).join("\n")}` : "";
         const task = await gh().createIssue(p.projectPath, { title: String(p.title).trim(), description: `Épica: ${epicRef}\n\n${p.description || ""}${checklistMd}`, labels: [] });
-        const { branch, commit } = await prepareLocalBranch(p.dir, p.projectPath, { sourceBranch: p.sourceBranch, newBranch: p.newBranch, commitMessage: p.commitMessage, issueIid: task.iid, push: p.push });
+        const { branch, commit, steps } = await prepareLocalBranch(p.dir, p.projectPath, { sourceBranch: p.sourceBranch, newBranch: p.newBranch, commitMessage: p.commitMessage, issueIid: task.iid, push: p.push, fallbackMessage: String(p.title).trim() });
         const mr = await gh().createMergeRequest(p.projectPath, {
           sourceBranch: branch,
           targetBranch: p.targetBranch,
           title: String(p.title).trim(),
           description: `Closes #${task.iid}\nÉpica: ${epicRef}\n\n${p.description || ""}${checklistMd}`,
         });
-        results.push({ projectPath: p.projectPath, ok: true, task, mr, commit });
+        results.push({ projectPath: p.projectPath, ok: true, task, mr, commit, steps });
       } catch (err) {
         results.push({ projectPath: p.projectPath, ok: false, error: String(err.message || err) });
       }
@@ -316,10 +333,10 @@ function wireIpc() {
         if (!projRe.test(p.projectPath || "")) throw new Error("Proyecto no válido");
         if (!branchRe.test(p.sourceBranch || "") || !branchRe.test(p.targetBranch || "")) throw new Error("Rama no válida");
         if (!p.title || !String(p.title).trim()) throw new Error("Falta el título de la MR");
-        const { branch, commit } = await prepareLocalBranch(p.dir, p.projectPath, { sourceBranch: p.sourceBranch, newBranch: p.newBranch, commitMessage: p.commitMessage, issueIid: issue.iid, push: p.push });
+        const { branch, commit, steps } = await prepareLocalBranch(p.dir, p.projectPath, { sourceBranch: p.sourceBranch, newBranch: p.newBranch, commitMessage: p.commitMessage, issueIid: issue.iid, push: p.push, fallbackMessage: String(p.title).trim() });
         const link = issue.projectPath === p.projectPath ? `Closes #${issue.iid}` : `Relacionada con ${issueRef}`;
         const mr = await gh().createMergeRequest(p.projectPath, { sourceBranch: branch, targetBranch: p.targetBranch, title: String(p.title).trim(), description: `${link}\n` });
-        results.push({ projectPath: p.projectPath, ok: true, mr, commit });
+        results.push({ projectPath: p.projectPath, ok: true, mr, commit, steps });
       } catch (err) {
         results.push({ projectPath: p.projectPath, ok: false, error: String(err.message || err) });
       }

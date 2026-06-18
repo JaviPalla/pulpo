@@ -145,6 +145,15 @@ async function commitAll(dir, message) {
   return { sha };
 }
 
+// ¿El working tree tiene cambios sin commitear (incl. ficheros nuevos)? `git status --porcelain`.
+async function isDirty(dir) {
+  try {
+    return (await git(dir, ["status", "--porcelain"])).trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
 // Diff de los cambios SIN commitear (vs HEAD), para que la IA sugiera el mensaje del commit.
 async function workingDiff(dir) {
   try {
@@ -154,7 +163,7 @@ async function workingDiff(dir) {
   }
 }
 
-module.exports = { scanRepos, repoInfo, remotePath, parseWorktrees, parseBranches, pushBranch, branchDiff, createLocalBranch, commitAll, workingDiff };
+module.exports = { scanRepos, repoInfo, remotePath, parseWorktrees, parseBranches, pushBranch, branchDiff, createLocalBranch, commitAll, workingDiff, isDirty };
 
 // Auto-verificación: `node src/local.js [dir]` (dir por defecto = el padre de este repo).
 if (require.main === module) {

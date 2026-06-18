@@ -38,7 +38,7 @@ const state = {
   // Issues/Epics + MRs. `tab`: "crear" (Issue/Epic nuevos) | "vincular" (a una tarea existente).
   // `rootDir` = directorio raíz donde conviven los clones; `repos` = lo escaneado por local:repos.
   // `form` = formulario de "Crear tarea" abierto para un repo (null = listado). Ver openLocalForm.
-  local: { tab: "crear", rootDir: null, repos: [], loading: false, info: {}, selected: new Set(), form: null, linkForm: null, history: [] },
+  local: { tab: "crear", rootDir: null, repos: [], loading: false, info: {}, selected: new Set(), form: null, linkForm: null, history: [], historyDetail: null },
   prSnapshot: null, // nº → {reviewDecision, checks, reviewMe} para detectar cambios y notificar
   cursor: -1, // selección con teclado (j/k) en la lista
   draftKeys: new Set(), // "owner/repo#n" con borradores guardados → badge 📝 en la lista
@@ -3551,6 +3551,7 @@ async function enterLocal(tab) {
 async function loadLocalHistory() {
   const l = state.local;
   l.loading = true;
+  l.historyDetail = null;
   renderLocal();
   try {
     l.history = await window.pulpo.localHistoryList();
@@ -3599,43 +3600,53 @@ async function pickLocalRoot() {
 
 const KIND_LABEL = { tarea: "Tarea", epic: "Epic", vincular: "Vinculación" };
 
+// Enlace-pill tipado (Issue/Epic/MR/Commit) a GitLab. Reutilizado por la lista y el detalle.
+const lhPill = (type, url, label) => `<a href="${esc(url)}" class="lh-pill lh-pill-${type}" data-ext>${esc(label)}</a>`;
+const lhDate = (ts) => { try { return new Date(ts).toLocaleString("es-ES", { dateStyle: "medium", timeStyle: "short" }); } catch { return ts || ""; } };
+// ¿Algún paso o proyecto falló? (para el aviso ⚠ y que no pase desapercibido un push silencioso).
+function entryHasWarning(e) {
+  const stepBad = (steps) => (steps || []).some((s) => s && s.ok === false);
+  if (e.kind === "tarea") return stepBad(e.steps);
+  return (e.results || []).some((r) => !r.ok || stepBad(r.steps));
+}
+
 function renderLocalHistory() {
+  if (state.local.historyDetail) return renderLocalHistoryDetail();
   const entries = state.local.history || [];
   const head = `
     <div class="local-head">
       <h2>Histórico</h2>
-      <p class="local-desc">Trabajos creados desde Trabajo local, con los enlaces de GitLab de cada item.</p>
+      <p class="local-desc">Trabajos creados desde Trabajo local, con los enlaces de GitLab de cada item. Pulsa una tarjeta para ver el detalle y el log de pasos.</p>
     </div>`;
   if (!entries.length) {
     list.innerHTML = head + `<div class="local-empty"><p>Aún no has creado ninguna tarea desde aquí.</p></div>`;
     notifySelftestOnce();
     return;
   }
-  // Enlace-pill tipado (Issue/Epic/MR/Commit) a GitLab.
-  const pill = (type, url, label) => `<a href="${esc(url)}" class="lh-pill lh-pill-${type}" data-ext>${esc(label)}</a>`;
-  // Fila por proyecto (epics/vinculaciones multiproyecto): nombre del proyecto + sus pills.
   const projRow = (r, withTask) =>
     r.ok
-      ? `<div class="lh-proj"><span class="lh-proj-name">${projectIconHtml(r.projectPath)}${esc(projectMeta(r.projectPath).name)}</span><span class="lh-proj-pills">${withTask && r.task ? pill("issue", r.task.url, `#${r.task.iid}`) : ""}${pill("mr", r.mr.url, `!${r.mr.number}`)}${r.commit ? pill("commit", r.commit.url, r.commit.sha.slice(0, 8)) : ""}</span></div>`
-      : `<div class="lh-proj err"><span class="lh-proj-name">${esc(r.projectPath)}</span><span class="local-err">${esc(r.error)}</span></div>`;
+      ? `<div class="lh-proj"><span class="lh-proj-name">${projectIconHtml(r.projectPath)}${esc(projectMeta(r.projectPath).name)}</span><span class="lh-proj-pills">${withTask && r.task ? lhPill("issue", r.task.url, `Tarea #${r.task.iid}`) : ""}${lhPill("mr", r.mr.url, `MR !${r.mr.number}`)}${r.commit ? lhPill("commit", r.commit.url, r.commit.sha.slice(0, 8)) : ""}</span></div>`
+      : `<div class="lh-proj err"><span class="lh-proj-name">${esc(r.projectPath)}</span><span class="local-err">⚠ ${esc(r.error)}</span></div>`;
   const cards = entries
     .map((e) => {
-      const date = (() => { try { return new Date(e.ts).toLocaleString("es-ES", { dateStyle: "medium", timeStyle: "short" }); } catch { return e.ts || ""; } })();
       let items = "";
       if (e.kind === "tarea") {
-        items = `<div class="lh-pills">${pill("issue", e.issue.url, `Issue #${e.issue.iid}`)}${pill("mr", e.mr.url, `MR !${e.mr.number}`)}${e.commit ? pill("commit", e.commit.url, `Commit ${e.commit.sha.slice(0, 8)}`) : ""}</div>`;
+        items = `<div class="lh-pills">${lhPill("issue", e.issue.url, `Issue #${e.issue.iid}`)}${lhPill("mr", e.mr.url, `MR !${e.mr.number}`)}${e.commit ? lhPill("commit", e.commit.url, `Commit ${e.commit.sha.slice(0, 8)}`) : ""}</div>`;
         if (e.projectPath) items = `<div class="lh-sub">${projectIconHtml(e.projectPath)}${esc(projectMeta(e.projectPath).name)}</div>` + items;
       } else if (e.kind === "epic") {
-        items = `<div class="lh-pills">${pill("epic", e.epic.url, `Epic #${e.epic.iid}`)}</div>${(e.results || []).map((r) => projRow(r, true)).join("")}`;
+        items = `<div class="lh-pills">${lhPill("epic", e.epic.url, `Epic #${e.epic.iid}`)}</div>${(e.results || []).map((r) => projRow(r, true)).join("")}`;
       } else {
-        items = `<div class="lh-pills">${pill(e.issue.isEpic ? "epic" : "issue", e.issue.url, `${e.issue.isEpic ? "Epic" : "Issue"} ${e.issue.projectPath}#${e.issue.iid}`)}</div>${(e.results || []).map((r) => projRow(r, false)).join("")}`;
+        items = `<div class="lh-pills">${lhPill(e.issue.isEpic ? "epic" : "issue", e.issue.url, `${e.issue.isEpic ? "Epic" : "Issue"} ${e.issue.projectPath}#${e.issue.iid}`)}</div>${(e.results || []).map((r) => projRow(r, false)).join("")}`;
       }
+      const warn = entryHasWarning(e) ? `<span class="lh-warn" title="Algún paso no se completó — abre el detalle">⚠</span>` : "";
       return `
         <div class="lh-card lh-k-${esc(e.kind)}">
           <div class="lh-head">
             <span class="lh-kind lh-${esc(e.kind)}">${KIND_LABEL[e.kind] || esc(e.kind)}</span>
             <span class="lh-title">${esc(e.title || "(sin título)")}</span>
-            <time class="lh-date">${esc(date)}</time>
+            ${warn}
+            <time class="lh-date">${esc(lhDate(e.ts))}</time>
+            <button class="lh-detail" data-id="${esc(e.id)}">Detalle →</button>
             <button class="lh-del" data-id="${esc(e.id)}" title="Quitar del histórico" aria-label="Quitar del histórico">✕</button>
           </div>
           <div class="lh-items">${items}</div>
@@ -3644,8 +3655,58 @@ function renderLocalHistory() {
     .join("");
   list.innerHTML = head + `<div class="lh-toolbar"><span class="muted">${entries.length} trabajo${entries.length === 1 ? "" : "s"}</span><button class="btn local-change" id="lh-clear">Vaciar histórico</button></div><div class="lh-list">${cards}</div>`;
   list.querySelectorAll("a[data-ext]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); window.pulpo.openExternal(a.getAttribute("href")); }));
+  list.querySelectorAll(".lh-detail").forEach((b) => b.addEventListener("click", () => { state.local.historyDetail = (state.local.history || []).find((x) => x.id === b.dataset.id) || null; renderLocal(); }));
   list.querySelectorAll(".lh-del").forEach((b) => b.addEventListener("click", async () => { state.local.history = await window.pulpo.localHistoryRemove(b.dataset.id); renderLocal(); }));
   $("#lh-clear")?.addEventListener("click", async () => { state.local.history = await window.pulpo.localHistoryClear(); renderLocal(); });
+  notifySelftestOnce();
+}
+
+// Vista de detalle de una entrada del histórico: items con sus enlaces + el LOG DE PASOS (commit,
+// push, rama feature…) por proyecto, para enterarse si algo no se completó (p.ej. un push silencioso).
+function renderLocalHistoryDetail() {
+  const e = state.local.historyDetail;
+  const stepsHtml = (steps) =>
+    (steps || []).length
+      ? `<ul class="lh-steps">${steps.map((s) => `<li class="${s.ok === false ? "bad" : "good"}">${s.ok === false ? "✕" : "✓"} ${esc(s.text)}</li>`).join("")}</ul>`
+      : `<p class="muted lh-nosteps">Sin pasos locales registrados.</p>`;
+  let body = "";
+  let primaryMr = null;
+  if (e.kind === "tarea") {
+    primaryMr = e.mr;
+    body = `
+      <div class="lh-d-block">
+        <div class="lh-sub">${projectIconHtml(e.projectPath)}${esc(projectMeta(e.projectPath).name)}</div>
+        <div class="lh-pills">${lhPill("issue", e.issue.url, `Issue #${e.issue.iid}`)}${lhPill("mr", e.mr.url, `MR !${e.mr.number}`)}${e.commit ? lhPill("commit", e.commit.url, `Commit ${e.commit.sha.slice(0, 8)}`) : ""}</div>
+        ${stepsHtml(e.steps)}
+      </div>`;
+  } else {
+    const top = e.kind === "epic"
+      ? `<div class="lh-pills">${lhPill("epic", e.epic.url, `Epic #${e.epic.iid} · ${e.epic.title}`)}</div>`
+      : `<div class="lh-pills">${lhPill(e.issue.isEpic ? "epic" : "issue", e.issue.url, `${e.issue.isEpic ? "Epic" : "Issue"} ${e.issue.projectPath}#${e.issue.iid} · ${e.issue.title}`)}</div>`;
+    primaryMr = (e.results || []).find((r) => r.ok)?.mr || null;
+    const blocks = (e.results || [])
+      .map((r) => {
+        const links = r.ok
+          ? `<div class="lh-pills">${r.task ? lhPill("issue", r.task.url, `Tarea #${r.task.iid}`) : ""}${lhPill("mr", r.mr.url, `MR !${r.mr.number}`)}${r.commit ? lhPill("commit", r.commit.url, `Commit ${r.commit.sha.slice(0, 8)}`) : ""}</div>`
+          : `<div class="local-err">⚠ ${esc(r.error)}</div>`;
+        return `<div class="lh-d-block ${r.ok ? "" : "err"}"><div class="lh-sub">${projectIconHtml(r.projectPath)}${esc(projectMeta(r.projectPath).name)}</div>${links}${stepsHtml(r.steps)}</div>`;
+      })
+      .join("");
+    body = top + blocks;
+  }
+  list.innerHTML = `
+    <div class="local-head">
+      <h2>${KIND_LABEL[e.kind] || esc(e.kind)} · ${esc(e.title || "")}</h2>
+      <p class="local-desc">${esc(lhDate(e.ts))}</p>
+    </div>
+    <div class="lh-detail-body">${body}</div>
+    <div class="lf-actions" style="margin:0 20px 28px">
+      <button class="btn" id="lhd-back">← Volver al histórico</button>
+      ${primaryMr ? `<button class="btn btn-accent" id="lhd-openmr">Ver MR en Pulpo</button>` : ""}
+    </div>`;
+  list.querySelectorAll("a[data-ext]").forEach((a) => a.addEventListener("click", (ev) => { ev.preventDefault(); window.pulpo.openExternal(a.getAttribute("href")); }));
+  $("#lhd-back").addEventListener("click", () => { state.local.historyDetail = null; renderLocal(); });
+  if (primaryMr) $("#lhd-openmr").addEventListener("click", () => { state.local.historyDetail = null; openLocalMrInPulpo(primaryMr); });
   notifySelftestOnce();
 }
 
@@ -3923,8 +3984,6 @@ function localProjectBlock(p, i, epic) {
 
 function renderLocalForm() {
   const f = state.local.form;
-  if (f.result) return renderLocalResult();
-
   const headTitle = f.epic ? `Crear épica · ${f.projects.length} proyectos` : `Crear tarea · ${esc(f.projects[0].repo.name)}`;
   const headDesc = f.epic
     ? `Se creará una <b>Epic</b> y, en cada proyecto, una <b>Issue</b> + una <b>MR</b> vinculadas a la Epic.`
@@ -4055,69 +4114,26 @@ async function createLocalTask() {
   renderLocal();
   try {
     if (f.epic) {
-      f.result = await window.pulpo.localCreateEpicTask({
-        epicTitle: f.epicTitle.trim(),
-        epicDescription: "",
-        projects: f.projects.map((p) => localProjPayload(p, f.push)),
-      });
-      const ok = f.result.results.filter((x) => x.ok).length;
-      toast(`Epic + ${ok}/${f.result.results.length} tareas creadas ✓`, ok === f.result.results.length ? "ok" : "warn");
+      const res = await window.pulpo.localCreateEpicTask({ epicTitle: f.epicTitle.trim(), epicDescription: "", projects: f.projects.map((p) => localProjPayload(p, f.push)) });
+      const ok = res.results.filter((x) => x.ok).length;
+      toast(`Epic + ${ok}/${res.results.length} tareas creadas`, ok === res.results.length ? "ok" : "warn");
     } else {
-      f.result = await window.pulpo.localCreateTask(localProjPayload(f.projects[0], f.push));
+      await window.pulpo.localCreateTask(localProjPayload(f.projects[0], f.push));
       toast("Issue + MR creadas ✓", "ok");
     }
+    // #1: al terminar, llevar al histórico actualizado (con el detalle de lo creado y el log de pasos).
+    state.local.form = null;
+    state.local.selected.clear();
+    await enterLocal("historico");
   } catch (err) {
     f.error = String(err.message || err);
-    toast("Error al crear", "err");
-  } finally {
     f.creating = false;
+    toast("Error al crear", "err");
     renderLocal();
   }
 }
 
 const extLink = (url, label) => `<a href="${esc(url)}" class="lf-result-link" data-ext>${esc(label)}</a>`;
-
-function renderLocalResult() {
-  const f = state.local.form;
-  let bodyHtml;
-  let primaryMr = null;
-  if (f.epic) {
-    const { epic, results } = f.result;
-    primaryMr = (results.find((r) => r.ok) || {}).mr || null;
-    const rows = results
-      .map((r) =>
-        r.ok
-          ? `<div class="lf-result-card"><span class="lf-result-k">${esc(r.projectPath)}</span>${extLink(r.task.url, `#${r.task.iid}`)} · ${extLink(r.mr.url, `!${r.mr.number}`)}${r.commit ? ` · ${extLink(r.commit.url, `commit ${r.commit.sha.slice(0, 8)}`)}` : ""}</div>`
-          : `<div class="lf-result-card err"><span class="lf-result-k">${esc(r.projectPath)}</span><span class="local-err">${esc(r.error)}</span></div>`,
-      )
-      .join("");
-    bodyHtml = `<div class="lf-result-card"><span class="lf-result-k">Epic</span>${extLink(epic.url, `#${epic.iid} · ${epic.title}`)}</div>${rows}`;
-  } else {
-    const { issue, mr, commit } = f.result;
-    primaryMr = mr;
-    bodyHtml = `
-      <div class="lf-result-card"><span class="lf-result-k">Issue</span>${extLink(issue.url, `#${issue.iid} · ${issue.title}`)}</div>
-      <div class="lf-result-card"><span class="lf-result-k">Merge Request</span>${extLink(mr.url, `!${mr.number} · ${mr.title}`)}</div>
-      ${commit ? `<div class="lf-result-card"><span class="lf-result-k">Commit</span>${extLink(commit.url, commit.sha.slice(0, 8))}</div>` : ""}`;
-  }
-  list.innerHTML = `
-    <div class="local-head">
-      <h2>✓ ${f.epic ? "Epic creada" : "Tarea creada"}</h2>
-    </div>
-    <div class="lf-result">
-      ${bodyHtml}
-      <div class="lf-actions">
-        <button class="btn" id="lf-back">Volver al listado</button>
-        ${primaryMr ? `<button class="btn btn-accent" id="lf-openmr">Ver MR en Pulpo</button>` : ""}
-      </div>
-    </div>`;
-  list.querySelectorAll("a[data-ext]").forEach((a) =>
-    a.addEventListener("click", (e) => { e.preventDefault(); window.pulpo.openExternal(a.getAttribute("href")); }),
-  );
-  $("#lf-back").addEventListener("click", () => { state.local.selected.clear(); closeLocalForm(); });
-  if (primaryMr) $("#lf-openmr").addEventListener("click", () => openLocalMrInPulpo(primaryMr));
-  notifySelftestOnce();
-}
 
 // Deep-link interno: salta a la vista de MRs del repo de la MR creada y abre su detalle.
 async function openLocalMrInPulpo(mr) {
@@ -4177,7 +4193,6 @@ function syncLocalLinkForm() {
 
 function renderLocalLinkForm() {
   const f = state.local.linkForm;
-  if (f.result) return renderLinkResult();
   const resultsHtml = f.searching
     ? `<div class="loading">Buscando…</div>`
     : f.results.length
@@ -4291,48 +4306,19 @@ async function createLinkTask() {
   f.error = null;
   renderLocal();
   try {
-    f.result = await window.pulpo.localLinkTask({
-      issue: f.issue,
-      projects: f.projects.map((p) => localProjPayload(p, f.push)),
-    });
-    const ok = f.result.results.filter((x) => x.ok).length;
-    toast(`${ok}/${f.result.results.length} MR creadas ✓`, ok === f.result.results.length ? "ok" : "warn");
+    const res = await window.pulpo.localLinkTask({ issue: f.issue, projects: f.projects.map((p) => localProjPayload(p, f.push)) });
+    const ok = res.results.filter((x) => x.ok).length;
+    toast(`${ok}/${res.results.length} MR creadas`, ok === res.results.length ? "ok" : "warn");
+    // #1: al terminar, al histórico actualizado.
+    state.local.linkForm = null;
+    state.local.selected.clear();
+    await enterLocal("historico");
   } catch (err) {
     f.error = String(err.message || err);
-    toast("Error al vincular", "err");
-  } finally {
     f.creating = false;
+    toast("Error al vincular", "err");
     renderLocal();
   }
-}
-
-function renderLinkResult() {
-  const f = state.local.linkForm;
-  const { issue, results } = f.result;
-  const primaryMr = (results.find((r) => r.ok) || {}).mr || null;
-  const rows = results
-    .map((r) =>
-      r.ok
-        ? `<div class="lf-result-card"><span class="lf-result-k">${esc(r.projectPath)}</span>${extLink(r.mr.url, `!${r.mr.number} · ${r.mr.title}`)}${r.commit ? ` · ${extLink(r.commit.url, `commit ${r.commit.sha.slice(0, 8)}`)}` : ""}</div>`
-        : `<div class="lf-result-card err"><span class="lf-result-k">${esc(r.projectPath)}</span><span class="local-err">${esc(r.error)}</span></div>`,
-    )
-    .join("");
-  list.innerHTML = `
-    <div class="local-head"><h2>✓ MR(s) vinculadas</h2></div>
-    <div class="lf-result">
-      <div class="lf-result-card"><span class="lf-result-k">${issue.isEpic ? "Epic" : "Issue"}</span>${extLink(issue.url, `${issue.projectPath}#${issue.iid} · ${issue.title}`)}</div>
-      ${rows}
-      <div class="lf-actions">
-        <button class="btn" id="llf-back">Volver al listado</button>
-        ${primaryMr ? `<button class="btn btn-accent" id="llf-openmr">Ver MR en Pulpo</button>` : ""}
-      </div>
-    </div>`;
-  list.querySelectorAll("a[data-ext]").forEach((a) =>
-    a.addEventListener("click", (e) => { e.preventDefault(); window.pulpo.openExternal(a.getAttribute("href")); }),
-  );
-  $("#llf-back").addEventListener("click", () => { state.local.selected.clear(); closeLocalLinkForm(); });
-  if (primaryMr) $("#llf-openmr").addEventListener("click", () => openLocalMrInPulpo(primaryMr));
-  notifySelftestOnce();
 }
 
 /* ============ arranque ============ */
@@ -4409,7 +4395,7 @@ async function boot() {
   if (IS_SELFTEST && SELFTEST_ROUTE === "releases") enterReleases();
   if (IS_SELFTEST && SELFTEST_ROUTE === "local") runLocalSelftest();
   if (IS_SELFTEST && SELFTEST_ROUTE === "local-vincular") runLocalLinkSelftest();
-  if (IS_SELFTEST && SELFTEST_ROUTE === "local-historico") runLocalHistorySelftest();
+  if (IS_SELFTEST && (SELFTEST_ROUTE === "local-historico" || SELFTEST_ROUTE === "local-historico-detail")) runLocalHistorySelftest();
   if (IS_SELFTEST && SELFTEST_ROUTE === "local-list") runLocalListSelftest();
 }
 
@@ -4439,17 +4425,21 @@ async function runLocalHistorySelftest() {
       { id: "s1", ts: new Date().toISOString(), kind: "tarea", title: "Exportar pedidos a CSV", projectPath: "OpenSaludGroup/dashboard",
         issue: { iid: 142, url: `${base}/OpenSaludGroup/dashboard/-/issues/142`, title: "Exportar pedidos a CSV" },
         mr: { number: 318, url: `${base}/OpenSaludGroup/dashboard/-/merge_requests/318` },
-        commit: { sha: "a1b2c3d4e5f6", url: `${base}/OpenSaludGroup/dashboard/-/commit/a1b2c3d4e5f6` } },
+        commit: { sha: "a1b2c3d4e5f6", url: `${base}/OpenSaludGroup/dashboard/-/commit/a1b2c3d4e5f6` },
+        steps: [{ ok: true, text: "Rama feature creada: feature/exportar-pedidos" }, { ok: true, text: 'Commit creado: a1b2c3d4 — "Añade exportación de pedidos"' }, { ok: true, text: "Push de feature/exportar-pedidos a origin: ok" }] },
       { id: "s2", ts: new Date(Date.now() - 3600e3).toISOString(), kind: "epic", title: "Unificar autenticación SSO",
         epic: { iid: 27, url: `${base}/OpenSaludGroup/epics/-/issues/27`, title: "Unificar autenticación SSO" },
         results: [
-          { ok: true, projectPath: "OpenSaludGroup/dashboard", task: { iid: 143, url: `${base}/OpenSaludGroup/dashboard/-/issues/143` }, mr: { number: 319, url: `${base}/OpenSaludGroup/dashboard/-/merge_requests/319` }, commit: { sha: "bb22cc33", url: `${base}/x/-/commit/bb22cc33` } },
-          { ok: true, projectPath: "libraries/JWTToken", task: { iid: 12, url: `${base}/libraries/JWTToken/-/issues/12` }, mr: { number: 44, url: `${base}/libraries/JWTToken/-/merge_requests/44` }, commit: null },
+          { ok: true, projectPath: "OpenSaludGroup/dashboard", task: { iid: 143, url: `${base}/OpenSaludGroup/dashboard/-/issues/143` }, mr: { number: 319, url: `${base}/OpenSaludGroup/dashboard/-/merge_requests/319` }, commit: { sha: "bb22cc33", url: `${base}/x/-/commit/bb22cc33` },
+            steps: [{ ok: true, text: "Commit creado: bb22cc33 — \"Integra SSO\"" }, { ok: true, text: "Push de development a origin: ok" }] },
+          { ok: false, projectPath: "libraries/JWTToken", error: "push rechazado: la rama development está protegida" },
         ] },
       { id: "s3", ts: new Date(Date.now() - 86400e3).toISOString(), kind: "vincular", title: "Corrige caché de catálogo",
         issue: { iid: 90, projectPath: "OpenSaludGroup/dashboard", isEpic: false, url: `${base}/OpenSaludGroup/dashboard/-/issues/90`, title: "Corrige caché de catálogo" },
-        results: [{ ok: true, projectPath: "OpenSaludGroup/dashboard", mr: { number: 320, url: `${base}/OpenSaludGroup/dashboard/-/merge_requests/320` }, commit: null }] },
+        results: [{ ok: true, projectPath: "OpenSaludGroup/dashboard", mr: { number: 320, url: `${base}/OpenSaludGroup/dashboard/-/merge_requests/320` }, commit: null,
+          steps: [{ ok: true, text: "Sin cambios locales que commitear" }, { ok: true, text: "Push de fix/cache a origin: ok" }] }] },
     ];
+    if (SELFTEST_ROUTE === "local-historico-detail") state.local.historyDetail = state.local.history[1]; // la epic con un fallo
     renderLocal();
   } catch (err) {
     console.error("[selftest] local-historico failed:", err);
