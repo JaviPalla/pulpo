@@ -419,6 +419,18 @@ async function generateReleaseBranches() {
   throw new Error("La vista de Releases solo está disponible en GitLab.");
 }
 
+async function nextReleaseTag() {
+  throw new Error("La creación de releases solo está disponible en GitLab.");
+}
+
+async function createReleases() {
+  throw new Error("La creación de releases solo está disponible en GitLab.");
+}
+
+async function releaseStatus() {
+  throw new Error("La creación de releases solo está disponible en GitLab.");
+}
+
 async function createSnippet() {
   throw new Error("Publicar el resumen como snippet solo está disponible en GitLab.");
 }
@@ -526,6 +538,9 @@ module.exports = {
   collapseMilestoneEpics,
   releaseDefaults,
   generateReleaseBranches,
+  nextReleaseTag,
+  createReleases,
+  releaseStatus,
   createSnippet,
   createIssue,
   createMergeRequest,

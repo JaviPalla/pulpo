@@ -614,6 +614,79 @@ async function generateReleaseBranches({ projects, version, sourceBranch, ouicar
   return { branch, ref, appDate, results };
 }
 
+/* ---------- publicar releases (tag + release por proyecto) ---------- */
+
+/**
+ * Siguiente tag CalVer para un proyecto dado un `base` (p.ej. "2026.06"): mira las releases
+ * existentes, busca los tags `^<base>\.(\d+)$` y devuelve `<base>.<max+1>` (o `<base>.0` si no hay).
+ * Así el patch se autoincrementa POR PROYECTO sin tener que teclear el semver a mano.
+ */
+async function nextReleaseTag(projectId, base) {
+  const releases = await api("GET", `/projects/${proj(String(projectId))}/releases?per_page=100`);
+  const re = new RegExp(`^${base.replace(/\./g, "\\.")}\\.(\\d+)$`);
+  let max = -1;
+  for (const r of releases || []) {
+    const m = (r.tag_name || "").match(re);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `${base}.${max + 1}`;
+}
+
+/**
+ * Publica una release (tag + release en UNA llamada: POST /releases crea el tag si no existe) en
+ * cada proyecto. `ref` = la rama rb/… de la que se publica; `base` = CalVer "AAAA.MM" (el patch lo
+ * resuelve nextReleaseTag por proyecto). `milestones` = array de TÍTULOS (la API los acepta de
+ * proyecto o de grupo ancestro). NO atómico entre N proyectos (igual que generateReleaseBranches):
+ * se aplica en serie y se reporta por-proyecto {id,name,ok,tag,releaseUrl?,error?}. Solo GitLab.
+ */
+async function createReleases({ projects, ref, base, milestones, description, name }) {
+  const results = [];
+  for (const p of projects || []) {
+    try {
+      const tag = await nextReleaseTag(p.id, base);
+      const body = { tag_name: tag, ref };
+      if (Array.isArray(milestones) && milestones.length) body.milestones = milestones;
+      if (description) body.description = description;
+      body.name = name ? name.replace(/\{tag\}/g, tag) : tag;
+      const created = await api("POST", `/projects/${proj(String(p.id))}/releases`, body);
+      results.push({ id: p.id, name: p.name || String(p.id), ok: true, tag, releaseUrl: created._links?.self || null });
+    } catch (err) {
+      results.push({ id: p.id, name: p.name || String(p.id), ok: false, error: String(err.message || err) });
+    }
+  }
+  return { base, ref, milestones: milestones || [], results };
+}
+
+/**
+ * Estado de despliegue de un proyecto para un ref/tag: pipeline (estado normalizado a la forma
+ * GitHub vía mapPipeline) + entornos. Para "saber si se ha desplegado correctamente esta versión".
+ * NO lanza: cada parte se captura por separado y cae a null/[] para que el panel sea estable.
+ */
+async function releaseStatus(projectId, ref) {
+  const id = proj(String(projectId));
+  let pipeline = null;
+  try {
+    const pipes = await api("GET", `/projects/${id}/pipelines?ref=${encodeURIComponent(ref)}&per_page=1`);
+    const p = (pipes || [])[0];
+    if (p) pipeline = { state: mapPipeline({ status: p.status })?.state || "EXPECTED", webUrl: p.web_url || null };
+  } catch {
+    pipeline = null;
+  }
+  let environments = [];
+  try {
+    const envs = await api("GET", `/projects/${id}/environments?per_page=20`);
+    environments = (envs || []).map((e) => ({
+      name: e.name,
+      state: e.state, // "available" | "stopped"
+      lastDeploy: e.last_deployment?.created_at || null,
+      webUrl: e.external_url || null,
+    }));
+  } catch {
+    environments = [];
+  }
+  return { pipeline, environments };
+}
+
 /** GitLab revierte creando un commit directo en la rama destino (no abre MR). */
 async function revertPullRequest(encodedId) {
   const { repo, iid } = decodeId(encodedId);
@@ -1002,5 +1075,8 @@ module.exports = {
   collapseMilestoneEpics,
   releaseDefaults,
   generateReleaseBranches,
+  nextReleaseTag,
+  createReleases,
+  releaseStatus,
   createSnippet,
 };

@@ -19,7 +19,7 @@ const SELFTEST_ROUTE = (process.argv.find((a) => a.startsWith("--selftest-route=
 // La ruta de resumen espera a una IA (lenta con Opus); la de releases proxea los avatares del grupo
 // entero (groupProjects). Ambas necesitan más margen que los 20s por defecto.
 const SELFTEST_TIMEOUT_MS =
-  SELFTEST_ROUTE === "milestones-summary" ? 240000 : SELFTEST_ROUTE === "releases" || SELFTEST_ROUTE.startsWith("local") ? 60000 : 20000;
+  SELFTEST_ROUTE === "milestones-summary" ? 240000 : SELFTEST_ROUTE === "releases" || SELFTEST_ROUTE === "releases-publish" || SELFTEST_ROUTE.startsWith("local") ? 60000 : 20000;
 
 let win = null;
 
@@ -481,6 +481,28 @@ function wireIpc() {
       ouicareArg = { ...cfgOuicare, enabled: true, date };
     }
     return gh().generateReleaseBranches({ projects: selected, version: v, sourceBranch: src, ouicare: ouicareArg });
+  });
+
+  // Publicar release (tag + release) en N proyectos. Misma filosofía de validación que generate:
+  // no confiamos en el renderer, validamos formato; los permisos del token son el límite real.
+  ipcMain.handle("releases:create", async (_event, { projects, ref, base, milestones, description, name }) => {
+    if (typeof base !== "string" || !/^\d{4}\.\d{2}$/.test(base)) throw new Error("Versión CalVer no válida (AAAA.MM)");
+    if (typeof ref !== "string" || !BRANCH_RE.test(ref)) throw new Error("Rama de release no válida");
+    const PATH_RE = /^[\w.-]+(\/[\w.-]+)+$|^\d+$/;
+    const selected = (projects || [])
+      .filter((p) => p && typeof p.id === "string" && PATH_RE.test(p.id))
+      .map((p) => ({ id: p.id, name: typeof p.name === "string" && p.name.trim() ? p.name.trim() : p.id }));
+    if (!selected.length) throw new Error("No hay proyectos seleccionados");
+    const ms = Array.isArray(milestones) ? milestones.filter((t) => typeof t === "string" && t.trim()).map((t) => t.trim()) : [];
+    const desc = typeof description === "string" ? description.slice(0, 10000) : "";
+    const nm = typeof name === "string" ? name.slice(0, 200) : "";
+    return gh().createReleases({ projects: selected, ref, base, milestones: ms, description: desc, name: nm });
+  });
+  ipcMain.handle("releases:status", async (_event, { projectId, ref }) => {
+    const PATH_RE = /^[\w.-]+(\/[\w.-]+)+$|^\d+$/;
+    if (typeof projectId !== "string" || !PATH_RE.test(projectId)) throw new Error("Proyecto no válido");
+    if (typeof ref !== "string" || !BRANCH_RE.test(ref)) throw new Error("Ref no válida");
+    return gh().releaseStatus(projectId, ref);
   });
 
   ipcMain.handle("shell:open", (_event, url) => {

@@ -1100,6 +1100,19 @@ body {
 /* ---------- releases (generar release branches) ---------- */
 .dot-release { background: linear-gradient(135deg, var(--orange, #bf8700), var(--red)); }
 .rel-view { max-width: 720px; margin: 0 auto; padding: 8px 4px 40px; }
+.rel-field-full { margin: 4px 0 8px; }
+.rel-field-full textarea { resize: vertical; width: 100%; }
+/* Estado por release: pipeline + entornos */
+.rel-pipe { font-weight: 700; margin-right: 2px; }
+.rel-pipe.ok { color: var(--green); }
+.rel-pipe.err { color: var(--red); }
+.rel-pipe.pending { color: var(--yellow); }
+.rel-pipe.muted { color: var(--text-muted); }
+.rel-envs { display: inline-flex; gap: 4px; margin-left: 6px; }
+.rel-env {
+  font-size: 11px; padding: 1px 6px; border-radius: 5px; border: 1px solid var(--border); color: var(--text-muted);
+}
+.rel-env.up { border-color: var(--green); color: var(--green); }
 .rel-head h2 { margin-bottom: 4px; }
 .rel-sub { color: var(--text-muted); font-size: 13px; line-height: 1.5; }
 .rel-view code {

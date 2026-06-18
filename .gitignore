@@ -4,3 +4,6 @@ out/
 *.log
 .DS_Store
 CLAUDE.md
+.agent_context
+.claude
+.multica
