@@ -1169,3 +1169,166 @@ body {
 .rel-confirm-list { margin: 10px 0; padding-left: 18px; font-size: 13px; line-height: 1.7; }
 .rel-confirm-notes { margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
 .rel-confirm-note { font-size: 12px; color: var(--text); background: var(--yellow-bg); padding: 6px 9px; border-radius: 7px; }
+
+/* ============ Trabajo local → GitLab (OPE-19) ============ */
+.local-head { padding: 16px 20px 4px; }
+.local-head h2 { margin: 0 0 4px; font-size: 17px; }
+.local-desc { margin: 0; font-size: 13px; color: var(--text-muted); }
+.local-empty { margin: 24px 20px; padding: 28px; text-align: center; border: 1px dashed var(--border); border-radius: 12px; color: var(--text-muted); }
+.local-empty p { margin: 0 0 14px; font-size: 14px; }
+.local-root { display: flex; align-items: center; gap: 10px; margin: 12px 20px; padding: 8px 12px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 9px; }
+.local-root-path { flex: 1; font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btn.local-change { padding: 4px 10px; font-size: 12px; }
+.local-repos { display: flex; flex-direction: column; gap: 8px; margin: 4px 20px 24px; }
+.local-repo { padding: 10px 14px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px; }
+.local-repo-top { display: flex; align-items: center; gap: 10px; }
+.local-name { font-weight: 600; font-size: 14px; }
+.local-badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
+.local-badge.ok { color: var(--green); border-color: var(--green); background: var(--green-bg); }
+.local-badge.none { opacity: 0.7; }
+.local-repo-meta { margin-top: 6px; display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--text-muted); }
+.local-cur { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.local-dirty { color: var(--accent); }
+.local-err { color: var(--red); }
+.local-repo.clickable { cursor: pointer; }
+.local-repo.clickable:hover { border-color: var(--accent); background: var(--bg-hover); }
+.local-go { margin-left: auto; font-size: 12px; color: var(--accent); }
+.local-soon { margin: 8px 20px; padding: 10px 14px; font-size: 13px; color: var(--text-muted); background: var(--bg-raised); border: 1px dashed var(--border); border-radius: 9px; }
+
+/* Formulario Crear tarea */
+.lf { margin: 8px 20px 28px; display: flex; flex-direction: column; gap: 14px; max-width: 760px; }
+.lf-row { display: flex; gap: 14px; }
+.lf-row label, .lf-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--text-muted); flex: 1; }
+.lf select, .lf input[type="text"], .lf textarea {
+  font: inherit; font-size: 13px; color: var(--text); background: var(--bg-raised);
+  border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; width: 100%; box-sizing: border-box;
+}
+.lf textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.lf-mode { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
+.lf-chip { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-raised); color: var(--text-muted); cursor: pointer; }
+.lf-chip.on { border-color: var(--accent); color: var(--accent); background: var(--bg-hover); }
+.lf-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); }
+.lf-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+.lf-result { margin: 8px 20px 28px; display: flex; flex-direction: column; gap: 12px; max-width: 620px; }
+.lf-result-card { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px; }
+.lf-result-k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); min-width: 110px; }
+.lf-result-link { color: var(--accent); text-decoration: none; font-size: 14px; }
+.lf-result-link:hover { text-decoration: underline; }
+.lf-result-card.err { border-color: var(--red); }
+
+/* Selección múltiple + barra de acción */
+.local-repo.selectable { cursor: pointer; }
+.local-repo.selectable:hover { border-color: var(--accent); }
+.local-repo.checked { border-color: var(--accent); background: var(--bg-hover); }
+.local-cb { accent-color: var(--accent); width: 15px; height: 15px; }
+.local-actionbar { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin: 0 20px; padding: 12px 0; background: linear-gradient(to top, var(--bg) 60%, transparent); }
+.local-selcount { font-size: 12px; color: var(--text-muted); }
+
+/* Bloque por proyecto en el form (Epic) */
+.lf-proj { display: flex; flex-direction: column; gap: 12px; }
+details.lf-proj { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; background: var(--bg-raised); }
+details.lf-proj > summary { cursor: pointer; display: flex; align-items: center; gap: 8px; list-style: none; }
+details.lf-proj > summary::-webkit-details-marker { display: none; }
+details.lf-proj[open] > summary { margin-bottom: 8px; }
+div.lf-proj { border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; background: var(--bg-raised); }
+.lf-proj-name { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+
+/* Vincular: buscador y resultados de Issue/Epic */
+.llf-results { display: flex; flex-direction: column; gap: 6px; }
+.llf-issue { display: flex; align-items: center; gap: 10px; text-align: left; width: 100%; font: inherit; cursor: pointer; padding: 8px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-raised); color: var(--text); }
+.llf-issue:hover { border-color: var(--accent); }
+.llf-issue.on { border-color: var(--accent); background: var(--bg-hover); }
+.llf-issue-title { flex: 1; font-size: 13px; }
+.llf-chosen { font-size: 13px; color: var(--text); padding: 8px 12px; background: var(--green-bg); border: 1px solid var(--green); border-radius: 9px; }
+
+/* Campo markdown estilo GitLab (Editar / Vista previa) */
+.md-field { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-raised); }
+.md-tabs { display: flex; align-items: center; gap: 4px; padding: 4px 6px; background: var(--bg-hover); border-bottom: 1px solid var(--border); }
+.md-label { flex: 1; font-size: 12px; color: var(--text-muted); padding-left: 4px; }
+.md-tab { font: inherit; font-size: 12px; padding: 3px 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; }
+.md-tab.on { background: var(--bg-raised); border-color: var(--border); color: var(--text); }
+.md-field textarea { border: none; border-radius: 0; background: var(--bg-raised); }
+.md-preview { padding: 10px 12px; font-size: 13px; color: var(--text); min-height: 60px; }
+.md-preview h3, .md-preview h4, .md-preview h5, .md-preview h6 { margin: 8px 0 4px; }
+.md-preview p { margin: 6px 0; }
+.md-preview ul { margin: 6px 0; padding-left: 20px; }
+.md-preview ul.md-task { list-style: none; padding-left: 4px; }
+.md-preview code { background: var(--bg-hover); padding: 1px 5px; border-radius: 5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.md-preview pre { background: var(--bg-hover); padding: 10px 12px; border-radius: 7px; overflow-x: auto; }
+.md-preview pre code { background: none; padding: 0; }
+.md-preview a { color: var(--accent); }
+.hidden { display: none; }
+
+/* Leyenda "sucio" + rama feature en el formulario */
+.local-legend { margin: 4px 20px 0; font-size: 12px; color: var(--text-muted); }
+.local-legend .local-dirty { font-weight: 600; }
+.lf-feat { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; background: var(--yellow-bg, var(--bg-hover)); border: 1px solid var(--border); border-radius: 8px; }
+.lf-feat code { background: var(--bg-hover); padding: 1px 5px; border-radius: 5px; font-size: 12px; }
+.lf-nb { font: inherit; font-size: 13px; color: var(--text); background: var(--bg-raised); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
+
+/* Agrupación de carpetas por repo base (listado de Trabajo local) */
+.local-group { margin: 0 20px 14px; }
+.local-group-head { display: flex; align-items: center; gap: 8px; padding: 6px 4px; }
+.local-group-head .ms-proj-name { font-weight: 600; font-size: 14px; }
+.local-group-path { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.local-group-count { margin-left: auto; font-size: 11px; color: var(--text-muted); background: var(--bg-hover); padding: 2px 8px; border-radius: 999px; }
+.local-group-folders { display: flex; flex-direction: column; gap: 6px; padding-left: 12px; border-left: 2px solid var(--border); margin-left: 11px; }
+
+/* Histórico de Trabajo local */
+.lh-toolbar { display: flex; align-items: center; justify-content: space-between; margin: 0 20px 10px; }
+.lh-list { display: flex; flex-direction: column; gap: 12px; margin: 0 20px 28px; }
+.lh-card { border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: 10px; background: var(--bg-raised); padding: 12px 16px; }
+.lh-card.lh-k-tarea { border-left-color: var(--accent); }
+.lh-card.lh-k-epic { border-left-color: var(--green); }
+.lh-card.lh-k-vincular { border-left-color: var(--text-muted); }
+.lh-head { display: flex; align-items: center; gap: 10px; }
+.lh-kind { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 8px; border-radius: 999px; background: var(--bg-hover); color: var(--text-muted); }
+.lh-kind.lh-tarea { color: var(--accent); }
+.lh-kind.lh-epic { color: var(--green); }
+.lh-title { flex: 1; font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lh-date { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.lh-del { font: inherit; border: none; background: transparent; color: var(--text-muted); cursor: pointer; padding: 2px 7px; border-radius: 6px; line-height: 1; }
+.lh-del:hover { background: var(--bg-hover); color: var(--red); }
+.lh-items { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.lh-sub { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+.lh-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.lh-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; text-decoration: none; padding: 3px 9px; border-radius: 7px; border: 1px solid var(--border); color: var(--text); background: var(--bg); }
+.lh-pill:hover { border-color: var(--accent); }
+.lh-pill::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--text-muted); }
+.lh-pill-issue::before { background: var(--accent); }
+.lh-pill-epic::before { background: var(--green); border-radius: 50%; }
+.lh-pill-mr::before { background: var(--accent); border-radius: 50%; }
+.lh-pill-commit::before { background: var(--text-muted); border-radius: 50%; }
+.lh-pill-commit { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.lh-proj { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 4px 0; border-top: 1px solid var(--border); }
+.lh-proj-name { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); min-width: 160px; }
+.lh-proj-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.lh-proj .ms-proj-ic, .lh-sub .ms-proj-ic { width: 16px; height: 16px; font-size: 9px; }
+.lh-warn { color: var(--yellow, #d29922); font-size: 14px; }
+.lh-detail { font: inherit; font-size: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--accent); cursor: pointer; padding: 3px 9px; border-radius: 7px; white-space: nowrap; }
+.lh-detail:hover { border-color: var(--accent); background: var(--bg-hover); }
+.lh-proj.err .local-err, .lh-d-block.err .local-err { color: var(--red); font-size: 12px; }
+
+/* Detalle de una entrada del histórico (log de pasos) */
+.lh-detail-body { margin: 0 20px; display: flex; flex-direction: column; gap: 12px; }
+.lh-d-block { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-raised); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.lh-d-block.err { border-color: var(--red); }
+.lh-steps { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.lh-steps li { font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-muted); }
+.lh-steps li.good { color: var(--text); }
+.lh-steps li.bad { color: var(--red); }
+.lh-nosteps { font-size: 12px; margin: 4px 0 0; }
+.lh-badge { font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
+.lh-badge.merged { color: #fff; background: #6f42c1; border-color: #6f42c1; }
+.lh-badge.closed { color: #fff; background: var(--red); border-color: var(--red); }
+.lh-badge.lbl { color: var(--text); background: var(--bg-hover); }
+
+/* Meta del formulario: milestone + etiquetas */
+.lf-meta { display: flex; flex-direction: column; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-raised); }
+.lf-labels { display: flex; flex-direction: column; gap: 8px; }
+.lbl-group { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.lbl-cat { font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); min-width: 110px; }
+.lbl-chip { font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text-muted); cursor: pointer; }
+.lbl-chip.on { color: var(--text); border-color: var(--accent); }
+.lbl-more { font-size: 12px; }
+.lbl-more > summary { cursor: pointer; color: var(--text-muted); margin-bottom: 6px; }

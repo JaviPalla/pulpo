@@ -435,6 +435,36 @@ async function createSnippet() {
   throw new Error("Publicar el resumen como snippet solo está disponible en GitLab.");
 }
 
+/**
+ * Stubs de paridad: el flujo de Trabajo local (crear Issue + MR desde una rama local) es solo-GitLab
+ * (la UI lo oculta cuando provider !== "gitlab"). Fallamos explícito en vez de en silencio.
+ */
+async function createIssue() {
+  throw new Error("Crear tareas desde Trabajo local solo está disponible en GitLab.");
+}
+
+async function createMergeRequest() {
+  throw new Error("Crear tareas desde Trabajo local solo está disponible en GitLab.");
+}
+
+async function createEpic() {
+  throw new Error("Crear epics desde Trabajo local solo está disponible en GitLab.");
+}
+
+async function searchGroupIssues() {
+  throw new Error("Vincular tareas desde Trabajo local solo está disponible en GitLab.");
+}
+
+async function createIssueLink() {
+  throw new Error("Vincular issues solo está disponible en GitLab.");
+}
+async function mrStatus() {
+  throw new Error("El estado del histórico solo está disponible en GitLab.");
+}
+async function issueStatus() {
+  throw new Error("El estado del histórico solo está disponible en GitLab.");
+}
+
 async function revertPullRequest(prNodeId) {
   const data = await gql(
     `mutation ($id: ID!) {
@@ -512,4 +542,11 @@ module.exports = {
   createReleases,
   releaseStatus,
   createSnippet,
+  createIssue,
+  createMergeRequest,
+  createEpic,
+  searchGroupIssues,
+  createIssueLink,
+  mrStatus,
+  issueStatus,
 };

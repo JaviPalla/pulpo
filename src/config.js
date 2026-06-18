@@ -74,6 +74,11 @@ const DEFAULTS = {
       appDateKey: "AppDate",
     },
   },
+  // Trabajo local → GitLab (OPE-19): publicar trabajo de ramas/worktrees locales como Issues/Epics + MRs.
+  local: {
+    // Directorio raíz donde conviven todos los clones de GitLab (un nivel). null = sin configurar.
+    rootDir: null,
+  },
 };
 
 function configPath() {
@@ -92,6 +97,8 @@ function load() {
     // Merge profundo de releases (incl. la clave anidada ouicare): un guardado parcial no debe pisar defaults.
     cfg.releases = { ...DEFAULTS.releases, ...(parsed.releases || {}) };
     cfg.releases.ouicare = { ...DEFAULTS.releases.ouicare, ...(parsed.releases?.ouicare || {}) };
+    // Merge profundo de local: un guardado parcial no debe pisar los defaults del resto de claves.
+    cfg.local = { ...DEFAULTS.local, ...(parsed.local || {}) };
     return cfg;
   } catch {
     return { ...DEFAULTS };
