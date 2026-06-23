@@ -146,7 +146,13 @@ async function generateViaSdk(prompt, model, effort, schema) {
 
 function claudeCliPath() {
   try {
-    return execFileSync("/bin/sh", ["-lc", "command -v claude"], { encoding: "utf8", timeout: 5000 }).trim() || null;
+    // Windows: `where` (devuelve una ruta por línea, nos quedamos con la primera).
+    // Unix/macOS: shell de login para heredar el PATH del usuario (nvm, brew, etc.).
+    const out =
+      process.platform === "win32"
+        ? execFileSync("where", ["claude"], { encoding: "utf8", timeout: 5000 }).split(/\r?\n/)[0]
+        : execFileSync("/bin/sh", ["-lc", "command -v claude"], { encoding: "utf8", timeout: 5000 });
+    return out.trim() || null;
   } catch {
     return null;
   }
@@ -156,7 +162,8 @@ function generateViaCli(prompt, cliPath, model, effort) {
   const args = [...CLI_ARGS, "--model", model];
   if (effort) args.push("--effort", effort);
   return new Promise((resolve, reject) => {
-    const child = spawn(cliPath, args, { stdio: ["pipe", "pipe", "pipe"] });
+    // shell:true en Windows: el CLI suele ser claude.cmd y Node ya no lanza .cmd sin shell.
+    const child = spawn(cliPath, args, { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, shell: process.platform === "win32" });
     let stdout = "";
     let stderr = "";
     let timedOut = false;

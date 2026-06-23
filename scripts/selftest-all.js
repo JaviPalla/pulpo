@@ -9,10 +9,12 @@
 
 const { spawnSync } = require("child_process");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
-const ELECTRON = path.join(__dirname, "..", "node_modules", ".bin", "electron");
-const SHOT = "/tmp/monstro-selftest.png";
+// En Windows el binario de electron es electron.cmd (.bin) y spawnSync no lo lanza sin extensión.
+const ELECTRON = path.join(__dirname, "..", "node_modules", ".bin", process.platform === "win32" ? "electron.cmd" : "electron");
+const SHOT = path.join(os.tmpdir(), "monstro-selftest.png");
 const ROUTES = ["list", "changes", "history"];
 
 let failed = 0;

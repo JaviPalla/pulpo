@@ -117,11 +117,22 @@ prefieres la API directa, exporta `ANTHROPIC_API_KEY` y Monstro usará el SDK of
 salida estructurada. En Ajustes ⚙ hay un botón **"Probar conexión con Claude"** para
 verificarlo desde la app.
 
-### Empaquetar como .app (opcional)
+### Empaquetar (macOS y Windows)
+
+Se usa [electron-builder](https://www.electron.build/) (config en `package.json` → `build`).
+Los iconos salen de `build/` (`icon.icns` para macOS, `icon.png` para que genere el `.ico` de Windows).
 
 ```bash
-npx electron-packager . Monstro --platform=darwin --arch=arm64 --icon=build/icon.icns --out=dist
+npm install        # instala electron-builder
+npm run dist:mac   # .dmg + .zip → dist/   (compilar macOS requiere macOS)
+npm run dist:win   # instalador NSIS .exe → dist/
+npm run dist       # ambos según la plataforma actual
 ```
+
+Notas Windows:
+- El instalador NSIS deja elegir carpeta (no es "one click").
+- Para token automático necesitas `gh`/`glab` en el PATH; si no, pega un token manual en Ajustes ⚙.
+- El marco/ventana usa los controles nativos de Windows (en macOS, los semáforos integrados).
 
 ## Arquitectura
 

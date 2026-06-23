@@ -66,7 +66,9 @@ body {
   -webkit-app-region: drag;
 }
 #topbar > * { -webkit-app-region: no-drag; }
-.traffic-pad { width: 78px; -webkit-app-region: drag; }
+/* Hueco para los semáforos de macOS; en Windows/Linux (sin .is-mac) se oculta. */
+.traffic-pad { display: none; -webkit-app-region: drag; }
+body.is-mac .traffic-pad { display: block; width: 78px; }
 .brand { font-size: 18px; line-height: 1; -webkit-app-region: drag; }
 #search {
   margin-left: auto;

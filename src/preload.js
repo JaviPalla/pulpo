@@ -3,6 +3,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("monstro", {
+  // El renderer ajusta el topbar según la plataforma (hueco de los traffic lights solo en macOS).
+  platform: process.platform,
   authStatus: () => ipcRenderer.invoke("auth:status"),
   getConfig: () => ipcRenderer.invoke("config:get"),
   setConfig: (partial) => ipcRenderer.invoke("config:set", partial),
