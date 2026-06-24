@@ -144,10 +144,13 @@ function confirmMerge(pr) {
 /** ¿Esta MR mergeada dispara el ofrecimiento de cherry-pick? */
 function shouldOfferCherryPick(pr) {
   if (!isGitlab()) return false;
+  const base = String(pr.baseRefName || "");
+  // Dispara si la rama destino es una release branch (rb/ o rb/-mx)
+  if (/(^|\/)rb\//.test(base) || base.endsWith("-mx")) return true;
+  // Dispara si la rama origen lleva el prefijo hotfix/
   const cp = state.config?.cherryPick;
   const prefix = cp?.prefix?.trim();
-  if (!prefix) return false;
-  return String(pr.headRefName || "").startsWith(prefix);
+  return !!prefix && String(pr.headRefName || "").startsWith(prefix);
 }
 
 /** Deriva la rama hermana de una release branch: mx ⇄ sin mx. null si no aplica. */
