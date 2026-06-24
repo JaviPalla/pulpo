@@ -2,7 +2,7 @@
 
 async function enterReleases(tab = "branches") {
   if (!isGitlab()) {
-    toast("La vista de Releases solo está disponible en GitLab", "");
+    toast(t("La vista de Releases solo está disponible en GitLab"), "");
     return;
   }
   state.view = "releases";
@@ -80,7 +80,7 @@ function renderReleases() {
   if (state.view !== "releases") return;
   const r = state.releases;
   if (r.loading || !r.defaults) {
-    list.innerHTML = `<div class="loading">Cargando configuración de releases…</div>`;
+    list.innerHTML = `<div class="loading">${t("Cargando configuración de releases…")}</div>`;
     if (!r.loading) notifySelftestOnce();
     return;
   }
@@ -96,7 +96,7 @@ function renderReleases() {
     .map((p) => {
       const off = !r.selected.has(p.path);
       return `<button class="ms-proj-chip ${off ? "off" : ""}" data-path="${esc(p.path)}" ${r.running ? "disabled" : ""}
-        title="${off ? "Excluido · clic para incluir" : "Incluido · clic para excluir"}">
+        title="${off ? t("Excluido · clic para incluir") : t("Incluido · clic para excluir")}">
         ${projectIconHtml(p.path)}<span class="ms-proj-name">${esc(p.name)}</span>
       </button>`;
     })
@@ -113,10 +113,10 @@ function renderReleases() {
     ? `<div class="rel-appdate">
         <label class="rel-appdate-toggle">
           <input type="checkbox" id="rel-appdate-on" ${r.appDateEnabled ? "checked" : ""} ${r.running ? "disabled" : ""} />
-          Actualizar <code>AppDate</code> de Ouicare (<code>${esc(r.defaults.ouicare.webConfigPath)}</code>)
+          ${t("Actualizar")} <code>AppDate</code> ${t("de Ouicare")} (<code>${esc(r.defaults.ouicare.webConfigPath)}</code>)
         </label>
         <input type="date" id="rel-appdate-date" value="${esc(r.appDate)}" ${r.appDateEnabled && !r.running ? "" : "disabled"} />
-        <span class="muted">Se commitea en <code>${esc(r.sourceBranch)}</code> antes de crear la rama.</span>
+        <span class="muted">${t("Se commitea en")} <code>${esc(r.sourceBranch)}</code> ${t("antes de crear la rama.")}</span>
       </div>`
     : "";
 
@@ -129,54 +129,54 @@ function renderReleases() {
     const ad = r.results.appDate;
     const adHtml = ad
       ? ad.ok
-        ? `<div class="rel-res-row ok">📝 Ouicare AppDate ${ad.skipped ? `ya estaba en <b>${esc(ad.date)}</b>` : `→ <b>${esc(ad.date)}</b>`}</div>`
-        : `<div class="rel-res-row err">📝 Ouicare AppDate: ${esc(ad.error || "error")}</div>`
+        ? `<div class="rel-res-row ok">📝 Ouicare AppDate ${ad.skipped ? `${t("ya estaba en")} <b>${esc(ad.date)}</b>` : `→ <b>${esc(ad.date)}</b>`}</div>`
+        : `<div class="rel-res-row err">📝 Ouicare AppDate: ${esc(ad.error || t("error"))}</div>`
       : "";
     const rowsHtml = r.results.results
       .map((res) =>
         res.ok
-          ? `<div class="rel-res-row ok">✓ ${esc(res.name)} ${res.webUrl ? `<a data-url="${esc(res.webUrl)}" href="#">ver rama</a>` : ""}</div>`
-          : `<div class="rel-res-row err" title="${esc(res.error || "")}">✕ ${esc(res.name)}: ${esc(res.error || "error")}</div>`,
+          ? `<div class="rel-res-row ok">✓ ${esc(res.name)} ${res.webUrl ? `<a data-url="${esc(res.webUrl)}" href="#">${t("ver rama")}</a>` : ""}</div>`
+          : `<div class="rel-res-row err" title="${esc(res.error || "")}">✕ ${esc(res.name)}: ${esc(res.error || t("error"))}</div>`,
       )
       .join("");
     resultsHtml = `
-      <div class="rel-summary ${cls}">Rama <code>${esc(r.results.branch)}</code> desde <code>${esc(r.results.ref)}</code> · ${ok} creada${ok === 1 ? "" : "s"}${fail ? ` · ${fail} con error` : ""}</div>
+      <div class="rel-summary ${cls}">${t("Rama")} <code>${esc(r.results.branch)}</code> ${t("desde")} <code>${esc(r.results.ref)}</code> · ${ok} ${ok === 1 ? t("creada") : t("creadas")}${fail ? ` · ${t("{fail} con error", { fail })}` : ""}</div>
       <div class="rel-results">${adHtml}${rowsHtml}</div>`;
   }
 
   list.innerHTML = `
     <div class="rel-view">
       <header class="rel-head">
-        <h2>Generar release branches</h2>
-        <p class="rel-sub">Crea la rama <code>${esc(prefix)}&lt;versión&gt;</code> en los proyectos seleccionados, a partir de una rama origen. Réplica del script <code>auto-rb-branches.py</code>.</p>
+        <h2>${t("Generar release branches")}</h2>
+        <p class="rel-sub">${t("Crea la rama")} <code>${esc(prefix)}&lt;versión&gt;</code> ${t("en los proyectos seleccionados, a partir de una rama origen. Réplica del script")} <code>auto-rb-branches.py</code>.</p>
       </header>
 
       <div class="rel-form">
         <label class="rel-field">
-          <span class="rel-label">Versión</span>
-          <input type="text" id="rel-version" value="${esc(r.version)}" placeholder="p.ej. ${esc(suggestedReleaseVersion())}" ${r.running ? "disabled" : ""} autocomplete="off" />
+          <span class="rel-label">${t("Versión")}</span>
+          <input type="text" id="rel-version" value="${esc(r.version)}" placeholder="${t("p.ej. {ej}", { ej: esc(suggestedReleaseVersion()) })}" ${r.running ? "disabled" : ""} autocomplete="off" />
         </label>
         <label class="rel-field">
-          <span class="rel-label">Rama origen</span>
+          <span class="rel-label">${t("Rama origen")}</span>
           <input type="text" id="rel-source" value="${esc(r.sourceBranch)}" placeholder="development" ${r.running ? "disabled" : ""} autocomplete="off" />
         </label>
         <div class="rel-preview-box">
-          <span class="rel-label">Rama a crear</span>
+          <span class="rel-label">${t("Rama a crear")}</span>
           <code class="rel-branch-preview ${valid ? "" : "invalid"}" id="rel-branch-preview">${esc(branchPreview)}</code>
         </div>
       </div>
 
       <div class="rel-projects-head">
-        <span>Proyectos <span class="rel-count" id="rel-sel-count">${selCount}/${projects.length}</span></span>
-        <button class="btn ghost" id="rel-toggle-all" ${r.running ? "disabled" : ""}>${allOn ? "Ninguno" : "Todos"}</button>
+        <span>${t("Proyectos")} <span class="rel-count" id="rel-sel-count">${selCount}/${projects.length}</span></span>
+        <button class="btn ghost" id="rel-toggle-all" ${r.running ? "disabled" : ""}>${allOn ? t("Ninguno") : t("Todos")}</button>
       </div>
-      <div class="rel-projects ms-proj-filter">${chipsHtml || `<span class="muted">No se han podido cargar los proyectos del grupo.</span>`}</div>
+      <div class="rel-projects ms-proj-filter">${chipsHtml || `<span class="muted">${t("No se han podido cargar los proyectos del grupo.")}</span>`}</div>
 
       ${appDateHtml}
       ${resultsHtml}
 
       <div class="rel-actions">
-        <button class="btn btn-primary" id="rel-generate" ${canRun ? "" : "disabled"}>${r.running ? "Generando…" : "Generar release branches"}</button>
+        <button class="btn btn-primary" id="rel-generate" ${canRun ? "" : "disabled"}>${r.running ? t("Generando…") : t("Generar release branches")}</button>
       </div>
     </div>`;
 
@@ -245,19 +245,19 @@ function confirmAndGenerateReleases() {
   const appDateOn = Boolean(ouicarePath && r.selected.has(ouicarePath) && r.appDateEnabled);
   const appDateStr = isoToAppDate(r.appDate);
   const noteHtml = appDateOn
-    ? `<div class="rel-confirm-notes"><div class="rel-confirm-note">📝 <b>Ouicare</b>: AppDate → <b>${esc(appDateStr)}</b> en <code>${esc(source)}</code> (commit a <code>${esc(r.defaults.ouicare.webConfigPath)}</code>) antes de ramificar.</div></div>`
+    ? `<div class="rel-confirm-notes"><div class="rel-confirm-note">📝 <b>Ouicare</b>: AppDate → <b>${esc(appDateStr)}</b> ${t("en")} <code>${esc(source)}</code> (${t("commit a")} <code>${esc(r.defaults.ouicare.webConfigPath)}</code>) ${t("antes de ramificar.")}</div></div>`
     : "";
   const root = $("#modal-root");
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal">
-        <h3>Crear <code>${esc(branch)}</code> en ${targets.length} proyecto${targets.length === 1 ? "" : "s"}</h3>
-        <p class="muted">Desde la rama <code>${esc(source)}</code>. Se aplica proyecto a proyecto (no atómico): si alguno falla, el resto sí se crea.</p>
+        <h3>${t("Crear")} <code>${esc(branch)}</code> ${targets.length === 1 ? t("en 1 proyecto") : t("en {n} proyectos", { n: targets.length })}</h3>
+        <p class="muted">${t("Desde la rama")} <code>${esc(source)}</code>. ${t("Se aplica proyecto a proyecto (no atómico): si alguno falla, el resto sí se crea.")}</p>
         <ul class="rel-confirm-list">${targets.map((p) => `<li>${esc(p.name)} <span class="muted">${esc(p.path)}</span></li>`).join("")}</ul>
         ${noteHtml}
         <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Cancelar</button>
-          <button class="btn btn-primary" id="modal-confirm">Crear ramas</button>
+          <button class="btn" id="modal-cancel">${t("Cancelar")}</button>
+          <button class="btn btn-primary" id="modal-confirm">${t("Crear ramas")}</button>
         </div>
       </div>
     </div>`;
@@ -287,7 +287,7 @@ async function runReleaseGeneration() {
     r.results = await window.monstro.generateReleaseBranches({ version: r.version, sourceBranch: r.sourceBranch, projects, ouicare });
     const ok = r.results.results.filter((x) => x.ok).length;
     const fail = r.results.results.length - ok;
-    toast(fail ? `${ok} creada(s), ${fail} con error` : `${ok} release branch(es) creada(s)`, fail ? "warn" : "ok");
+    toast(fail ? t("{ok} creada(s), {fail} con error", { ok, fail }) : t("{ok} release branch(es) creada(s)", { ok }), fail ? "warn" : "ok");
   } catch (err) {
     toast(String(err.message || err), "err");
   } finally {

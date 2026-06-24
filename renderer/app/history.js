@@ -2,7 +2,7 @@
 
 async function enterHistory() {
   if (state.repo === ALL_REPOS) {
-    toast("El histórico es por repositorio: elige uno en el selector", "");
+    toast(t("El histórico es por repositorio: elige uno en el selector"), "");
     return;
   }
   state.view = "history";
@@ -48,7 +48,7 @@ function renderHistory() {
   if (state.view !== "history") return;
   const h = state.history;
   if (h.loading) {
-    list.innerHTML = `<div class="loading">Tejiendo el grafo…</div>`;
+    list.innerHTML = `<div class="loading">${t("Tejiendo el grafo…")}</div>`;
     return;
   }
   if (!h.layout) return;
@@ -77,7 +77,7 @@ function renderHistory() {
   list.innerHTML = `
     <div class="history-toolbar">
       <div class="branch-chips">${chips}</div>
-      <button class="icon-btn" id="history-refresh" title="Recargar grafo">⟳</button>
+      <button class="icon-btn" id="history-refresh" title="${t("Recargar grafo")}">⟳</button>
     </div>
     <div class="graph-wrap">
       <div class="graph-svg" style="width:${width}px">${svg}</div>
@@ -133,20 +133,20 @@ function openCommitPanel(oid) {
         <code>${c.abbreviatedOid}</code>
       </div>
       <dl class="meta-grid">
-        <dt>Autor</dt><dd>${esc(c.author?.user?.login || c.author?.name || "?")}</dd>
-        <dt>Fecha</dt><dd>${new Date(c.committedDate).toLocaleString("es-ES")}</dd>
+        <dt>${t("Autor")}</dt><dd>${esc(c.author?.user?.login || c.author?.name || "?")}</dd>
+        <dt>${t("Fecha")}</dt><dd>${new Date(c.committedDate).toLocaleString("es-ES")}</dd>
         <dt>SHA</dt><dd><code>${c.oid}</code></dd>
         ${pr ? `<dt>PR</dt><dd><button class="pr-pill" id="commit-pr">#${pr.number} · ${esc(pr.title)}</button></dd>` : ""}
       </dl>
 
-      <div class="section-h">Acciones</div>
+      <div class="section-h">${t("Acciones")}</div>
       <div class="actions" style="flex-direction:column;align-items:stretch">
-        <button class="btn" id="cp-copy">📋 Copiar SHA</button>
-        <button class="btn" id="cp-branch">🌱 Crear rama desde aquí…</button>
-        <button class="btn" id="cp-reset">⏪ Mover una rama a este commit…</button>
-        ${pr && pr.state === "MERGED" ? `<button class="btn btn-danger" id="cp-revert">↩️ Revertir #${pr.number} (${isGitlab() ? "commit de revert" : "crea PR de revert"})</button>` : ""}
+        <button class="btn" id="cp-copy">📋 ${t("Copiar SHA")}</button>
+        <button class="btn" id="cp-branch">🌱 ${t("Crear rama desde aquí…")}</button>
+        <button class="btn" id="cp-reset">⏪ ${t("Mover una rama a este commit…")}</button>
+        ${pr && pr.state === "MERGED" ? `<button class="btn btn-danger" id="cp-revert">↩️ ${t("Revertir #{n} ({mode})", { n: pr.number, mode: isGitlab() ? t("commit de revert") : t("crea PR de revert") })}</button>` : ""}
       </div>
-      <p class="muted">“Mover una rama” reescribe la punta de la rama (force). Monstro te pedirá confirmación escrita; aún así, úsalo sabiendo lo que haces.</p>
+      <p class="muted">${t("“Mover una rama” reescribe la punta de la rama (force). Monstro te pedirá confirmación escrita; aún así, úsalo sabiendo lo que haces.")}</p>
     </div>`;
 
   $("#detail-close").addEventListener("click", () => {
@@ -166,11 +166,11 @@ function createBranchModal(commit) {
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal">
-        <h3>🌱 Crear rama en <code>${commit.abbreviatedOid}</code></h3>
+        <h3>🌱 ${t("Crear rama en")} <code>${commit.abbreviatedOid}</code></h3>
         <input type="text" id="nb-name" placeholder="feature/mi-rama" style="width:100%;margin-top:8px" class="modal-input" />
         <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Cancelar</button>
-          <button class="btn btn-accent" id="modal-confirm">Crear rama</button>
+          <button class="btn" id="modal-cancel">${t("Cancelar")}</button>
+          <button class="btn btn-accent" id="modal-confirm">${t("Crear rama")}</button>
         </div>
       </div>
     </div>`;
@@ -181,11 +181,11 @@ function createBranchModal(commit) {
     root.innerHTML = "";
     try {
       await window.monstro.createBranch(state.repo, name, commit.oid);
-      toast(`Rama ${name} creada en ${commit.abbreviatedOid}`, "ok");
+      toast(t("Rama {name} creada en {sha}", { name, sha: commit.abbreviatedOid }), "ok");
       state.history.branches = [];
       loadHistory();
     } catch (err) {
-      toast(`No se pudo crear: ${String(err.message || err)}`, "err");
+      toast(`${t("No se pudo crear:")} ${String(err.message || err)}`, "err");
     }
   });
 }
@@ -198,13 +198,13 @@ function resetBranchModal(commit) {
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal">
-        <h3>⏪ Mover rama a <code>${commit.abbreviatedOid}</code></h3>
-        <p class="muted">Esto hace un <b>force update</b> de la referencia: la rama pasará a apuntar a este commit y lo que tenga por delante se pierde de la rama. Las ramas protegidas lo rechazarán.</p>
+        <h3>⏪ ${t("Mover rama a")} <code>${commit.abbreviatedOid}</code></h3>
+        <p class="muted">${t("Esto hace un <b>force update</b> de la referencia: la rama pasará a apuntar a este commit y lo que tenga por delante se pierde de la rama. Las ramas protegidas lo rechazarán.")}</p>
         <select id="rb-branch" class="modal-input" style="width:100%;margin-top:8px">${options}</select>
-        <input type="text" id="rb-confirm" placeholder="Escribe el nombre exacto de la rama para confirmar" style="width:100%;margin-top:8px" class="modal-input" />
+        <input type="text" id="rb-confirm" placeholder="${t("Escribe el nombre exacto de la rama para confirmar")}" style="width:100%;margin-top:8px" class="modal-input" />
         <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Cancelar</button>
-          <button class="btn btn-danger" id="modal-confirm">Mover rama (force)</button>
+          <button class="btn" id="modal-cancel">${t("Cancelar")}</button>
+          <button class="btn btn-danger" id="modal-confirm">${t("Mover rama (force)")}</button>
         </div>
       </div>
     </div>`;
@@ -212,14 +212,14 @@ function resetBranchModal(commit) {
   $("#modal-confirm").addEventListener("click", async () => {
     const branch = $("#rb-branch").value;
     const typed = $("#rb-confirm").value.trim();
-    if (typed !== branch) return toast("El nombre no coincide: no muevo nada", "err");
+    if (typed !== branch) return toast(t("El nombre no coincide: no muevo nada"), "err");
     root.innerHTML = "";
     try {
       await window.monstro.forceUpdateBranch(state.repo, branch, commit.oid);
-      toast(`${branch} ahora apunta a ${commit.abbreviatedOid}`, "ok");
+      toast(t("{branch} ahora apunta a {sha}", { branch, sha: commit.abbreviatedOid }), "ok");
       loadHistory();
     } catch (err) {
-      toast(`Force update falló: ${String(err.message || err)}`, "err");
+      toast(`${t("Force update falló:")} ${String(err.message || err)}`, "err");
     }
   });
 }
@@ -229,16 +229,16 @@ function revertPRModal(pr) {
   // GitLab no abre MR de revert: crea un commit de revert directo en la rama destino.
   const gitlab = isGitlab();
   const desc = gitlab
-    ? "Crea un <b>commit de revert</b> directo en la rama destino (GitLab no abre una MR de revert)."
-    : "Crea una <b>PR de revert</b> (no toca la rama directamente). La revisas y la fusionas como cualquier otra.";
+    ? t("Crea un <b>commit de revert</b> directo en la rama destino (GitLab no abre una MR de revert).")
+    : t("Crea una <b>PR de revert</b> (no toca la rama directamente). La revisas y la fusionas como cualquier otra.");
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal">
-        <h3>↩️ Revertir #${pr.number}</h3>
+        <h3>↩️ ${t("Revertir #{n}", { n: pr.number })}</h3>
         <p>${desc}</p>
         <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Cancelar</button>
-          <button class="btn btn-danger" id="modal-confirm">${gitlab ? "Crear commit de revert" : "Crear PR de revert"}</button>
+          <button class="btn" id="modal-cancel">${t("Cancelar")}</button>
+          <button class="btn btn-danger" id="modal-confirm">${gitlab ? t("Crear commit de revert") : t("Crear PR de revert")}</button>
         </div>
       </div>
     </div>`;
@@ -248,14 +248,14 @@ function revertPRModal(pr) {
     try {
       const revert = await window.monstro.revertPR(state.repo, pr.number);
       if (revert.number) {
-        toast(`PR de revert creada: #${revert.number}`, "ok");
+        toast(t("PR de revert creada: #{n}", { n: revert.number }), "ok");
         exitHistoryToPR(revert.number);
       } else {
-        toast("Commit de revert creado", "ok");
+        toast(t("Commit de revert creado"), "ok");
         if (revert.url) window.monstro.openExternal(revert.url);
       }
     } catch (err) {
-      toast(`Revert falló: ${String(err.message || err)}`, "err");
+      toast(`${t("Revert falló:")} ${String(err.message || err)}`, "err");
     }
   });
 }

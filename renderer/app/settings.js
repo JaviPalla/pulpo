@@ -5,26 +5,26 @@ function cherryPickSettingsCard(cfg) {
   const branches = cp.branches || [];
   return `
     <div class="settings-card">
-      <h4>Cherry-pick de hotfix 🍒</h4>
-      <p class="muted">Las MR cuya rama origen empiece por el prefijo y vayan a la release branch ofrecen, tras el merge, replicar su contenido a otras ramas (te pregunta primero, nunca automático).</p>
+      <h4>${t("Cherry-pick de hotfix")} 🍒</h4>
+      <p class="muted">${t("Las MR cuya rama origen empiece por el prefijo y vayan a la release branch ofrecen, tras el merge, replicar su contenido a otras ramas (te pregunta primero, nunca automático).")}</p>
       <div class="add-repo">
         <input type="text" id="cp-prefix" value="${esc(cp.prefix || "")}" placeholder="hotfix/" />
-        <span class="muted" style="align-self:center">prefijo de rama origen</span>
+        <span class="muted" style="align-self:center">${t("prefijo de rama origen")}</span>
       </div>
       <label style="display:block;margin:8px 0">
         <input type="checkbox" id="cp-sibling" ${cp.siblingMx ? "checked" : ""} />
-        Añadir también la rama hermana de la release branch destino (mx ⇄ sin mx)
+        ${t("Añadir también la rama hermana de la release branch destino (mx ⇄ sin mx)")}
       </label>
-      <p class="muted">Ramas destino fijas (además de la hermana -mx):</p>
+      <p class="muted">${t("Ramas destino fijas (además de la hermana -mx):")}</p>
       <div id="cp-branch-lines">
-        ${branches.map((b) => `<div class="repo-line">${esc(b)} <button class="btn" data-cp-del="${esc(b)}">Quitar</button></div>`).join("") || `<p class="muted">— ninguna —</p>`}
+        ${branches.map((b) => `<div class="repo-line">${esc(b)} <button class="btn" data-cp-del="${esc(b)}">${t("Quitar")}</button></div>`).join("") || `<p class="muted">${t("— ninguna —")}</p>`}
       </div>
       <div class="add-repo">
         <input type="text" id="cp-new-branch" placeholder="development" />
-        <button class="btn btn-accent" id="cp-add-branch">Añadir rama</button>
+        <button class="btn btn-accent" id="cp-add-branch">${t("Añadir rama")}</button>
       </div>
       <div class="add-repo">
-        <button class="btn" id="cp-save">Guardar prefijo y opción</button>
+        <button class="btn" id="cp-save">${t("Guardar prefijo y opción")}</button>
       </div>
     </div>`;
 }
@@ -60,72 +60,83 @@ function openSettings() {
   const cfg = state.config;
   root.innerHTML = `
     <div class="settings-inner">
-      <button class="btn" id="settings-back">← Volver</button>
-      <h2 style="margin-top:14px">Ajustes</h2>
+      <button class="btn" id="settings-back">← ${t("Volver")}</button>
+      <h2 style="margin-top:14px">${t("Ajustes")}</h2>
       <div class="settings-card">
-        <h4>Proveedor</h4>
-        <p class="muted">Actual: <b>${providerName()}</b>${isGitlab() ? ` · <code>${esc(cfg.gitlabBaseUrl || "https://gitlab.com")}</code>` : ""}.</p>
+        <h4>${t("Proveedor")}</h4>
+        <p class="muted">${t("Actual:")} <b>${providerName()}</b>${isGitlab() ? ` · <code>${esc(cfg.gitlabBaseUrl || "https://gitlab.com")}</code>` : ""}.</p>
         ${isGitlab() ? `<div class="add-repo">
-          <input type="text" id="gitlab-base" placeholder="URL base (self-hosted)" value="${esc(cfg.gitlabBaseUrl || "https://gitlab.com")}" />
-          <button class="btn" id="save-gitlab-base">Guardar URL</button>
+          <input type="text" id="gitlab-base" placeholder="${t("URL base (self-hosted)")}" value="${esc(cfg.gitlabBaseUrl || "https://gitlab.com")}" />
+          <button class="btn" id="save-gitlab-base">${t("Guardar URL")}</button>
         </div>` : ""}
         <div class="add-repo">
-          <button class="btn" id="switch-provider" data-target="${isGitlab() ? "github" : "gitlab"}">Cambiar a ${isGitlab() ? "GitHub 🐙" : "GitLab 🦊"}</button>
+          <button class="btn" id="switch-provider" data-target="${isGitlab() ? "github" : "gitlab"}">${t("Cambiar a {name}", { name: isGitlab() ? "GitHub 🐙" : "GitLab 🦊" })}</button>
         </div>
-        <p class="muted">Cambiar de proveedor reinicia el onboarding (repos y token se piden de nuevo).</p>
+        <p class="muted">${t("Cambiar de proveedor reinicia el onboarding (repos y token se piden de nuevo).")}</p>
       </div>
       <div class="settings-card">
-        <h4>Repositorios</h4>
+        <h4>${t("Repositorios")}</h4>
         <div id="repo-lines">
-          ${cfg.repos.map((r) => `<div class="repo-line">${esc(r)} <button class="btn" data-del="${esc(r)}">Quitar</button></div>`).join("")}
+          ${cfg.repos.map((r) => `<div class="repo-line">${esc(r)} <button class="btn" data-del="${esc(r)}">${t("Quitar")}</button></div>`).join("")}
         </div>
         <div class="add-repo">
           <input type="text" id="new-repo" placeholder="${repoPlaceholder()}" />
-          <button class="btn btn-accent" id="add-repo">Añadir</button>
+          <button class="btn btn-accent" id="add-repo">${t("Añadir")}</button>
         </div>
       </div>
       <div class="settings-card">
-        <h4>Token de ${providerName()}</h4>
-        <p class="muted">Origen actual: <b>${esc(state.authSource || "ninguno")}</b>. Orden: <code>${isGitlab() ? "GITLAB_TOKEN" : "GITHUB_TOKEN"}</code> → <code>${isGitlab() ? "glab CLI" : "gh auth token"}</code> → token manual.</p>
+        <h4>${t("Token de {name}", { name: providerName() })}</h4>
+        <p class="muted">${t("Origen actual:")} <b>${esc(state.authSource || t("ninguno"))}</b>. ${t("Orden:")} <code>${isGitlab() ? "GITLAB_TOKEN" : "GITHUB_TOKEN"}</code> → <code>${isGitlab() ? "glab CLI" : "gh auth token"}</code> → ${t("token manual.")}</p>
         <div class="add-repo">
-          <input type="password" id="manual-token" placeholder="${cfg.hasManualToken ? "•••••••• (guardado)" : isGitlab() ? "glpat-… (opcional)" : "ghp_… (opcional)"}" />
-          <button class="btn" id="save-token">Guardar</button>
+          <input type="password" id="manual-token" placeholder="${cfg.hasManualToken ? t("•••••••• (guardado)") : isGitlab() ? t("glpat-… (opcional)") : t("ghp_… (opcional)")}" />
+          <button class="btn" id="save-token">${t("Guardar")}</button>
         </div>
       </div>
       <div class="settings-card">
-        <h4>IA (Review con IA 🤖)</h4>
-        <p class="muted" id="ai-status-line">Comprobando backend…</p>
+        <h4>${t("IA (Review con IA 🤖)")}</h4>
+        <p class="muted" id="ai-status-line">${t("Comprobando backend…")}</p>
         <div class="add-repo">
-          <select id="ai-model" disabled><option>Cargando modelos…</option></select>
+          <select id="ai-model" disabled><option>${t("Cargando modelos…")}</option></select>
           <select id="ai-effort" disabled></select>
         </div>
-        <p class="muted">Modelo y esfuerzo se aplican a cada review (API directa o CLI de Claude Code). Cada borrador queda etiquetado con lo que lo generó.</p>
-        <button class="btn" id="test-ai">Probar conexión con Claude</button>
+        <p class="muted">${t("Modelo y esfuerzo se aplican a cada review (API directa o CLI de Claude Code). Cada borrador queda etiquetado con lo que lo generó.")}</p>
+        <button class="btn" id="test-ai">${t("Probar conexión con Claude")}</button>
       </div>
       <div class="settings-card">
-        <h4>Refresco automático</h4>
+        <h4>${t("Refresco automático")}</h4>
         <div class="add-repo">
           <input type="number" id="poll-seconds" min="15" value="${cfg.pollSeconds}" />
-          <span class="muted" style="align-self:center">segundos</span>
+          <span class="muted" style="align-self:center">${t("segundos")}</span>
         </div>
       </div>
       ${isGitlab() ? cherryPickSettingsCard(cfg) : ""}
       <div class="settings-card">
-        <h4>Tema de interfaz ✦</h4>
-        <p class="muted">Aspecto visual general de la aplicación.</p>
+        <h4>${t("Idioma")} 🌐</h4>
+        <p class="muted">${t("Idioma de la interfaz. Por defecto sigue el idioma del sistema.")}</p>
+        <div class="add-repo">
+          <select id="app-language">
+            <option value="system" ${!cfg.language ? "selected" : ""}>${t("Sistema")}</option>
+            <option value="es" ${cfg.language === "es" ? "selected" : ""}>Español</option>
+            <option value="en" ${cfg.language === "en" ? "selected" : ""}>English</option>
+          </select>
+        </div>
+      </div>
+      <div class="settings-card">
+        <h4>${t("Tema de interfaz")} ✦</h4>
+        <p class="muted">${t("Aspecto visual general de la aplicación.")}</p>
         <div class="add-repo">
           <select id="ui-theme">
-            <option value="default" ${(cfg.uiTheme || "default") === "default" ? "selected" : ""}>Por defecto</option>
+            <option value="default" ${(cfg.uiTheme || "default") === "default" ? "selected" : ""}>${t("Por defecto")}</option>
             <option value="liquid-glass" ${(cfg.uiTheme || "default") === "liquid-glass" ? "selected" : ""}>Liquid Glass</option>
           </select>
         </div>
       </div>
       <div class="settings-card">
-        <h4>Tema de sintaxis 🎨</h4>
-        <p class="muted">Colores del resaltado de código en la pantalla de Cambios.</p>
+        <h4>${t("Tema de sintaxis")} 🎨</h4>
+        <p class="muted">${t("Colores del resaltado de código en la pantalla de Cambios.")}</p>
         <div class="add-repo">
           <select id="syntax-theme">
-            ${THEMES.map((t) => `<option value="${t.id}" ${(cfg.theme || "one-dark") === t.id ? "selected" : ""}>${esc(t.label)}</option>`).join("")}
+            ${THEMES.map((th) => `<option value="${th.id}" ${(cfg.theme || "one-dark") === th.id ? "selected" : ""}>${esc(th.label)}</option>`).join("")}
           </select>
         </div>
         <div class="theme-preview" data-syntax-theme="${esc(cfg.theme || "one-dark")}" id="theme-preview">
@@ -133,8 +144,8 @@ function openSettings() {
         </div>
       </div>
       <div class="settings-card">
-        <h4>Reglas de la casa</h4>
-        <p class="muted">pull → <b>rebase</b> · merge → <b>merge commit</b> · squash → <b style="text-decoration:line-through">jamás</b>. No configurable. A propósito.</p>
+        <h4>${t("Reglas de la casa")}</h4>
+        <p class="muted">pull → <b>rebase</b> · merge → <b>merge commit</b> · squash → <b style="text-decoration:line-through">${t("jamás")}</b>. ${t("No configurable. A propósito.")}</p>
       </div>
     </div>`;
 
@@ -151,7 +162,7 @@ function openSettings() {
   });
   $("#add-repo").addEventListener("click", async () => {
     const value = $("#new-repo").value.trim();
-    if (!repoRe().test(value)) return toast(`Formato esperado: ${repoPlaceholder()}`, "err");
+    if (!repoRe().test(value)) return toast(t("Formato esperado: {fmt}", { fmt: repoPlaceholder() }), "err");
     state.config = await window.monstro.setConfig({ repos: [...cfg.repos, value] });
     renderRepoSelect();
     openSettings();
@@ -167,9 +178,9 @@ function openSettings() {
   });
   $("#save-gitlab-base")?.addEventListener("click", async () => {
     const base = $("#gitlab-base").value.trim();
-    if (!/^https:\/\/[\w.-]+/.test(base)) return toast("URL no válida (https://…)", "err");
+    if (!/^https:\/\/[\w.-]+/.test(base)) return toast(t("URL no válida (https://…)"), "err");
     state.config = await window.monstro.setConfig({ gitlabBaseUrl: base });
-    toast("URL base guardada", "ok");
+    toast(t("URL base guardada"), "ok");
     boot();
   });
   root.querySelectorAll("[data-del]").forEach((btn) =>
@@ -182,8 +193,12 @@ function openSettings() {
   );
   $("#save-token").addEventListener("click", async () => {
     state.config = await window.monstro.setConfig({ token: $("#manual-token").value });
-    toast("Token guardado", "ok");
+    toast(t("Token guardado"), "ok");
     boot();
+  });
+  $("#app-language").addEventListener("change", (event) => {
+    const value = event.target.value;
+    setLanguage(value === "system" ? null : value);
   });
   $("#ui-theme").addEventListener("change", async (event) => {
     const uiTheme = event.target.value;
@@ -205,14 +220,14 @@ function openSettings() {
   };
   $("#cp-save")?.addEventListener("click", async () => {
     const prefix = $("#cp-prefix").value.trim();
-    if (!prefix) return toast("El prefijo no puede estar vacío", "err");
+    if (!prefix) return toast(t("El prefijo no puede estar vacío"), "err");
     await saveCherryPick({ prefix, siblingMx: $("#cp-sibling").checked });
-    toast("Cherry-pick configurado", "ok");
+    toast(t("Cherry-pick configurado"), "ok");
     openSettings();
   });
   $("#cp-add-branch")?.addEventListener("click", async () => {
     const value = $("#cp-new-branch").value.trim();
-    if (!BRANCH_RE.test(value)) return toast("Nombre de rama no válido", "err");
+    if (!BRANCH_RE.test(value)) return toast(t("Nombre de rama no válido"), "err");
     const branches = [...new Set([...(cfg.cherryPick?.branches || []), value])];
     await saveCherryPick({ branches });
     openSettings();
@@ -238,13 +253,13 @@ function openSettings() {
     const renderEfforts = (modelId) => {
       const info = s.models.find((m) => m.id === modelId);
       if (!info || !info.efforts.length) {
-        effortSel.innerHTML = `<option value="">esfuerzo: no aplicable</option>`;
+        effortSel.innerHTML = `<option value="">${t("esfuerzo: no aplicable")}</option>`;
         effortSel.disabled = true;
         return;
       }
       const selected = info.efforts.includes(currentEffort) ? currentEffort : "high";
       effortSel.innerHTML = info.efforts
-        .map((e) => `<option value="${e}" ${e === selected ? "selected" : ""}>esfuerzo: ${e}</option>`)
+        .map((e) => `<option value="${e}" ${e === selected ? "selected" : ""}>${t("esfuerzo: {level}", { level: e })}</option>`)
         .join("");
       effortSel.disabled = false;
     };
@@ -258,27 +273,27 @@ function openSettings() {
       const payload = { aiModel: modelSel.value };
       if (effortSel.value) payload.aiEffort = effortSel.value;
       state.config = await window.monstro.setConfig(payload);
-      toast(`Review con IA: ${modelSel.value}${effortSel.value ? ` · esfuerzo ${effortSel.value}` : ""}`, "ok");
+      toast(`${t("Review con IA:")} ${modelSel.value}${effortSel.value ? ` · ${t("esfuerzo {level}", { level: effortSel.value })}` : ""}`, "ok");
     });
     effortSel.addEventListener("change", async () => {
       if (!effortSel.value) return;
       currentEffort = effortSel.value;
       state.config = await window.monstro.setConfig({ aiEffort: effortSel.value });
-      toast(`Review con IA: esfuerzo ${effortSel.value}`, "ok");
+      toast(`${t("Review con IA:")} ${t("esfuerzo {level}", { level: effortSel.value })}`, "ok");
     });
   }).catch(() => {});
   $("#test-ai").addEventListener("click", async () => {
     const btn = $("#test-ai");
     btn.disabled = true;
-    btn.textContent = "Probando… (puede tardar ~30s)";
+    btn.textContent = t("Probando… (puede tardar ~30s)");
     try {
       const result = await window.monstro.aiPing();
-      toast(result.ok ? `IA OK vía ${result.backend}` : `IA no disponible: ${result.detail}`, result.ok ? "ok" : "err");
+      toast(result.ok ? t("IA OK vía {backend}", { backend: result.backend }) : t("IA no disponible: {detail}", { detail: result.detail }), result.ok ? "ok" : "err");
       const line = $("#ai-status-line");
-      if (line) line.innerHTML = `${result.ok ? "✓" : "✗"} <b>${esc(result.backend || "sin backend")}</b> — ${esc(result.detail)}`;
+      if (line) line.innerHTML = `${result.ok ? "✓" : "✗"} <b>${esc(result.backend || t("sin backend"))}</b> — ${esc(result.detail)}`;
     } finally {
       btn.disabled = false;
-      btn.textContent = "Probar conexión con Claude";
+      btn.textContent = t("Probar conexión con Claude");
     }
   });
 }
@@ -290,8 +305,8 @@ async function renderProviderChooser() {
   list.innerHTML = `
     <div class="welcome">
       <div class="welcome-logo">${mascot(64)}</div>
-      <h2>¿Con qué trabajas?</h2>
-      <p class="muted">Elige tu proveedor. Podrás cambiarlo luego en Ajustes ⚙.</p>
+      <h2>${t("¿Con qué trabajas?")}</h2>
+      <p class="muted">${t("Elige tu proveedor. Podrás cambiarlo luego en Ajustes ⚙.")}</p>
       <div class="provider-choice">
         <button class="repo-option provider-option" data-provider="github">
           <span class="repo-name">🐙 GitHub</span>
@@ -301,10 +316,10 @@ async function renderProviderChooser() {
         </button>
       </div>
       <div class="add-repo picker-manual" id="gitlab-base-row" style="display:none">
-        <input type="text" id="gitlab-base-input" placeholder="URL de GitLab (self-hosted): https://gitlab.miempresa.com" />
+        <input type="text" id="gitlab-base-input" placeholder="${t("URL de GitLab (self-hosted): https://gitlab.miempresa.com")}" />
       </div>
       <div class="welcome-actions">
-        <button class="btn btn-accent" id="provider-continue" disabled>Continuar</button>
+        <button class="btn btn-accent" id="provider-continue" disabled>${t("Continuar")}</button>
       </div>
     </div>`;
 
@@ -325,7 +340,7 @@ async function renderProviderChooser() {
     if (chosen === "gitlab") {
       const base = $("#gitlab-base-input").value.trim();
       if (base) {
-        if (!/^https:\/\/[\w.-]+/.test(base)) return toast("URL no válida (https://…)", "err");
+        if (!/^https:\/\/[\w.-]+/.test(base)) return toast(t("URL no válida (https://…)"), "err");
         partial.gitlabBaseUrl = base;
       }
     }
@@ -340,39 +355,39 @@ async function renderWelcome() {
   const aiOk = Boolean(aiStatus.backend);
   const gitlab = isGitlab();
   const cliCmd = gitlab ? "brew install glab && glab auth login" : "brew install gh && gh auth login";
-  const cliName = gitlab ? "CLI oficial de GitLab (glab)" : "CLI oficial de GitHub";
+  const cliName = gitlab ? t("CLI oficial de GitLab (glab)") : t("CLI oficial de GitHub");
   const envVar = gitlab ? "GITLAB_TOKEN" : "GITHUB_TOKEN";
   list.innerHTML = `
     <div class="welcome">
       <div class="welcome-logo">${mascot(64)}</div>
-      <h2>Bienvenido a Monstro</h2>
-      <p class="muted">Dos pasos y listo. Monstro no guarda credenciales: usa las sesiones que ya tienes.</p>
+      <h2>${t("Bienvenido a Monstro")}</h2>
+      <p class="muted">${t("Dos pasos y listo. Monstro no guarda credenciales: usa las sesiones que ya tienes.")}</p>
 
       <div class="setup-step bad">
         <div class="setup-mark">1</div>
         <div>
-          <b>Conecta ${providerName()}</b> <span class="chip chip-closed">pendiente</span>
-          <p class="muted">La vía fácil es el ${cliName} — Monstro coge el token de ahí:</p>
+          <b>${t("Conecta {name}", { name: providerName() })}</b> <span class="chip chip-closed">${t("pendiente")}</span>
+          <p class="muted">${t("La vía fácil es el {cli} — Monstro coge el token de ahí:", { cli: cliName })}</p>
           <pre class="setup-cmd">${cliCmd}</pre>
-          <p class="muted">Alternativas: exporta <code>${envVar}</code>, o pega un token en Ajustes ⚙.</p>
+          <p class="muted">${t("Alternativas: exporta")} <code>${envVar}</code>${t(", o pega un token en Ajustes ⚙.")}</p>
         </div>
       </div>
 
       <div class="setup-step ${aiOk ? "ok" : ""}">
         <div class="setup-mark">2</div>
         <div>
-          <b>Conecta Claude</b> <span class="chip ${aiOk ? "chip-open" : "chip-draft"}">${aiOk ? "listo" : "opcional"}</span>
+          <b>${t("Conecta Claude")}</b> <span class="chip ${aiOk ? "chip-open" : "chip-draft"}">${aiOk ? t("listo") : t("opcional")}</span>
           <p class="muted">${aiOk
-            ? `Detectado: ${esc(aiStatus.detail)} — el botón 🤖 Review con IA ya funciona.`
-            : `Para el botón 🤖 Review con IA: instala <a href="#" data-ext="https://claude.com/claude-code">Claude Code</a> y ábrelo una vez para autenticarte (Monstro usará tu sesión), o exporta <code>ANTHROPIC_API_KEY</code>.`}</p>
+            ? t("Detectado: {detail} — el botón 🤖 Review con IA ya funciona.", { detail: esc(aiStatus.detail) })
+            : `${t("Para el botón 🤖 Review con IA: instala")} <a href="#" data-ext="https://claude.com/claude-code">Claude Code</a> ${t("y ábrelo una vez para autenticarte (Monstro usará tu sesión), o exporta")} <code>ANTHROPIC_API_KEY</code>.`}</p>
         </div>
       </div>
 
       <div class="welcome-actions">
-        <button class="btn btn-accent" id="welcome-retry">He hecho login — Reintentar</button>
-        <button class="btn" id="welcome-settings">Abrir Ajustes ⚙</button>
+        <button class="btn btn-accent" id="welcome-retry">${t("He hecho login — Reintentar")}</button>
+        <button class="btn" id="welcome-settings">${t("Abrir Ajustes ⚙")}</button>
       </div>
-      <p class="muted small-print">¿Dudas? <code>npm run doctor</code> en la terminal diagnostica todo esto por ti.</p>
+      <p class="muted small-print">${t("¿Dudas?")} <code>npm run doctor</code> ${t("en la terminal diagnostica todo esto por ti.")}</p>
     </div>`;
   $("#welcome-retry").addEventListener("click", boot);
   $("#welcome-settings").addEventListener("click", openSettings);
@@ -391,15 +406,15 @@ async function renderRepoPicker() {
   list.innerHTML = `
     <div class="welcome">
       <div class="welcome-logo">${mascot(64)}</div>
-      <h2>¿Qué repositorios quieres ver?</h2>
-      <p class="muted">Conectado como <b>${esc(state.me?.login || "?")}</b>. Marca los repos que Monstro vigilará — podrás cambiarlos cuando quieras en Ajustes ⚙.</p>
-      <div id="repo-picker" class="repo-picker"><div class="empty">Buscando tus repositorios…</div></div>
+      <h2>${t("¿Qué repositorios quieres ver?")}</h2>
+      <p class="muted">${t("Conectado como")} <b>${esc(state.me?.login || "?")}</b>. ${t("Marca los repos que Monstro vigilará — podrás cambiarlos cuando quieras en Ajustes ⚙.")}</p>
+      <div id="repo-picker" class="repo-picker"><div class="empty">${t("Buscando tus repositorios…")}</div></div>
       <div class="add-repo picker-manual">
-        <input type="text" id="picker-manual-input" placeholder="¿Falta alguno? Escríbelo: ${repoPlaceholder()}" />
-        <button class="btn" id="picker-manual-add">Añadir</button>
+        <input type="text" id="picker-manual-input" placeholder="${t("¿Falta alguno? Escríbelo: {fmt}", { fmt: repoPlaceholder() })}" />
+        <button class="btn" id="picker-manual-add">${t("Añadir")}</button>
       </div>
       <div class="welcome-actions">
-        <button class="btn btn-accent" id="picker-start" disabled>Empezar</button>
+        <button class="btn btn-accent" id="picker-start" disabled>${t("Empezar")}</button>
       </div>
     </div>`;
 
@@ -409,7 +424,7 @@ async function renderRepoPicker() {
   const renderRows = () => {
     const names = [...new Set([...suggestions.map((s) => s.nameWithOwner), ...selected])];
     if (!names.length) {
-      rowsEl.innerHTML = `<div class="empty">No encontré repos accesibles con tu token — añade uno a mano abajo.</div>`;
+      rowsEl.innerHTML = `<div class="empty">${t("No encontré repos accesibles con tu token — añade uno a mano abajo.")}</div>`;
     } else {
       const isPrivate = new Map(suggestions.map((s) => [s.nameWithOwner, s.isPrivate]));
       rowsEl.innerHTML = names
@@ -418,7 +433,7 @@ async function renderRepoPicker() {
         <button class="repo-option ${selected.has(name) ? "selected" : ""}" data-repo="${esc(name)}">
           <span class="repo-check">${selected.has(name) ? "✓" : ""}</span>
           <span class="repo-name">${esc(name)}</span>
-          ${isPrivate.get(name) ? `<span class="chip chip-draft">privado</span>` : ""}
+          ${isPrivate.get(name) ? `<span class="chip chip-draft">${t("privado")}</span>` : ""}
         </button>`,
         )
         .join("");
@@ -433,8 +448,8 @@ async function renderRepoPicker() {
     }
     startBtn.disabled = !selected.size;
     startBtn.textContent = selected.size
-      ? `Empezar con ${selected.size} ${selected.size === 1 ? "repositorio" : "repositorios"}`
-      : "Empezar";
+      ? t("Empezar con {n} {unit}", { n: selected.size, unit: selected.size === 1 ? t("repositorio") : t("repositorios") })
+      : t("Empezar");
   };
 
   startBtn.addEventListener("click", async () => {
@@ -446,7 +461,7 @@ async function renderRepoPicker() {
   const addManual = () => {
     const input = $("#picker-manual-input");
     const value = input.value.trim();
-    if (!repoRe().test(value)) return toast(`Formato esperado: ${repoPlaceholder()}`, "err");
+    if (!repoRe().test(value)) return toast(t("Formato esperado: {fmt}", { fmt: repoPlaceholder() }), "err");
     selected.add(value);
     input.value = "";
     renderRows();

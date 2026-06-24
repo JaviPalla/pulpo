@@ -2,7 +2,7 @@
 
 async function enterLocal(tab) {
   if (!isGitlab()) {
-    toast("Trabajo local solo está disponible en GitLab", "");
+    toast(t("Trabajo local solo está disponible en GitLab"), "");
     return;
   }
   state.view = "local";
@@ -91,7 +91,7 @@ async function pickLocalRoot() {
   if (rootDir) await loadLocal();
 }
 
-const KIND_LABEL = { tarea: "Tarea", epic: "Epic", vincular: "Vinculación" };
+const KIND_LABEL = { tarea: t("Tarea"), epic: "Epic", vincular: t("Vinculación") };
 
 // Enlace-pill tipado (Issue/Epic/MR/Commit) a GitLab. Reutilizado por la lista y el detalle.
 const lhPill = (type, url, label) => `<a href="${esc(url)}" class="lh-pill lh-pill-${type}" data-ext>${esc(label)}</a>`;
@@ -104,7 +104,7 @@ const lhMrBadge = (pp, num) => {
 const lhIssueBadges = (pp, iid) => {
   const s = state.local.historyStatus[`issue:${pp}#${iid}`];
   if (!s) return "";
-  const out = s.closed ? [`<span class="lh-badge closed">cerrada</span>`] : [];
+  const out = s.closed ? [`<span class="lh-badge closed">${esc(t("cerrada"))}</span>`] : [];
   for (const lbl of s.labels || []) if (IMPORTANT_LABEL_RE.test(lbl)) out.push(`<span class="lh-badge lbl">${esc(lbl)}</span>`);
   return out.join("");
 };
@@ -121,17 +121,17 @@ function renderLocalHistory() {
   const entries = state.local.history || [];
   const head = `
     <div class="local-head">
-      <h2>Histórico</h2>
-      <p class="local-desc">Trabajos creados desde Trabajo local, con los enlaces de GitLab de cada item. Pulsa una tarjeta para ver el detalle y el log de pasos.</p>
+      <h2>${t("Histórico")}</h2>
+      <p class="local-desc">${t("Trabajos creados desde Trabajo local, con los enlaces de GitLab de cada item. Pulsa una tarjeta para ver el detalle y el log de pasos.")}</p>
     </div>`;
   if (!entries.length) {
-    list.innerHTML = head + `<div class="local-empty"><p>Aún no has creado ninguna tarea desde aquí.</p></div>`;
+    list.innerHTML = head + `<div class="local-empty"><p>${t("Aún no has creado ninguna tarea desde aquí.")}</p></div>`;
     notifySelftestOnce();
     return;
   }
   const projRow = (r, withTask) =>
     r.ok
-      ? `<div class="lh-proj"><span class="lh-proj-name">${projectIconHtml(r.projectPath)}${esc(projectMeta(r.projectPath).name)}</span><span class="lh-proj-pills">${withTask && r.task ? lhPill("issue", r.task.url, `Tarea #${r.task.iid}`) + lhIssueBadges(r.projectPath, r.task.iid) : ""}${lhPill("mr", r.mr.url, `MR !${r.mr.number}`)}${lhMrBadge(r.projectPath, r.mr.number)}${r.commit ? lhPill("commit", r.commit.url, r.commit.sha.slice(0, 8)) : ""}</span></div>`
+      ? `<div class="lh-proj"><span class="lh-proj-name">${projectIconHtml(r.projectPath)}${esc(projectMeta(r.projectPath).name)}</span><span class="lh-proj-pills">${withTask && r.task ? lhPill("issue", r.task.url, t("Tarea #{n}", { n: r.task.iid })) + lhIssueBadges(r.projectPath, r.task.iid) : ""}${lhPill("mr", r.mr.url, `MR !${r.mr.number}`)}${lhMrBadge(r.projectPath, r.mr.number)}${r.commit ? lhPill("commit", r.commit.url, r.commit.sha.slice(0, 8)) : ""}</span></div>`
       : `<div class="lh-proj err"><span class="lh-proj-name">${esc(r.projectPath)}</span><span class="local-err">⚠ ${esc(r.error)}</span></div>`;
   const cards = entries
     .map((e) => {
@@ -144,22 +144,22 @@ function renderLocalHistory() {
       } else {
         items = `<div class="lh-pills">${lhPill(e.issue.isEpic ? "epic" : "issue", e.issue.url, `${e.issue.isEpic ? "Epic" : "Issue"} ${e.issue.projectPath}#${e.issue.iid}`)}${lhIssueBadges(e.issue.projectPath, e.issue.iid)}</div>${(e.results || []).map((r) => projRow(r, false)).join("")}`;
       }
-      const warn = entryHasWarning(e) ? `<span class="lh-warn" title="Algún paso no se completó — abre el detalle">⚠</span>` : "";
+      const warn = entryHasWarning(e) ? `<span class="lh-warn" title="${esc(t("Algún paso no se completó — abre el detalle"))}">⚠</span>` : "";
       return `
         <div class="lh-card lh-k-${esc(e.kind)}">
           <div class="lh-head">
             <span class="lh-kind lh-${esc(e.kind)}">${KIND_LABEL[e.kind] || esc(e.kind)}</span>
-            <span class="lh-title">${esc(e.title || "(sin título)")}</span>
+            <span class="lh-title">${esc(e.title || t("(sin título)"))}</span>
             ${warn}
             <time class="lh-date">${esc(lhDate(e.ts))}</time>
-            <button class="lh-detail" data-id="${esc(e.id)}">Detalle →</button>
-            <button class="lh-del" data-id="${esc(e.id)}" title="Quitar del histórico" aria-label="Quitar del histórico">✕</button>
+            <button class="lh-detail" data-id="${esc(e.id)}">${t("Detalle →")}</button>
+            <button class="lh-del" data-id="${esc(e.id)}" title="${esc(t("Quitar del histórico"))}" aria-label="${esc(t("Quitar del histórico"))}">✕</button>
           </div>
           <div class="lh-items">${items}</div>
         </div>`;
     })
     .join("");
-  list.innerHTML = head + `<div class="lh-toolbar"><span class="muted">${entries.length} trabajo${entries.length === 1 ? "" : "s"}</span><button class="btn local-change" id="lh-clear">Vaciar histórico</button></div><div class="lh-list">${cards}</div>`;
+  list.innerHTML = head + `<div class="lh-toolbar"><span class="muted">${entries.length === 1 ? t("{n} trabajo", { n: entries.length }) : t("{n} trabajos", { n: entries.length })}</span><button class="btn local-change" id="lh-clear">${t("Vaciar histórico")}</button></div><div class="lh-list">${cards}</div>`;
   list.querySelectorAll("a[data-ext]").forEach((a) => a.addEventListener("click", (e) => { e.preventDefault(); window.monstro.openExternal(a.getAttribute("href")); }));
   list.querySelectorAll(".lh-detail").forEach((b) => b.addEventListener("click", () => { state.local.historyDetail = (state.local.history || []).find((x) => x.id === b.dataset.id) || null; renderLocal(); }));
   list.querySelectorAll(".lh-del").forEach((b) => b.addEventListener("click", async () => { state.local.history = await window.monstro.localHistoryRemove(b.dataset.id); renderLocal(); }));
@@ -174,7 +174,7 @@ function renderLocalHistoryDetail() {
   const stepsHtml = (steps) =>
     (steps || []).length
       ? `<ul class="lh-steps">${steps.map((s) => `<li class="${s.ok === false ? "bad" : "good"}">${s.ok === false ? "✕" : "✓"} ${esc(s.text)}</li>`).join("")}</ul>`
-      : `<p class="muted lh-nosteps">Sin pasos locales registrados.</p>`;
+      : `<p class="muted lh-nosteps">${t("Sin pasos locales registrados.")}</p>`;
   let body = "";
   let primaryMr = null;
   if (e.kind === "tarea") {
@@ -193,7 +193,7 @@ function renderLocalHistoryDetail() {
     const blocks = (e.results || [])
       .map((r) => {
         const links = r.ok
-          ? `<div class="lh-pills">${r.task ? lhPill("issue", r.task.url, `Tarea #${r.task.iid}`) : ""}${lhPill("mr", r.mr.url, `MR !${r.mr.number}`)}${r.commit ? lhPill("commit", r.commit.url, `Commit ${r.commit.sha.slice(0, 8)}`) : ""}</div>`
+          ? `<div class="lh-pills">${r.task ? lhPill("issue", r.task.url, t("Tarea #{n}", { n: r.task.iid })) : ""}${lhPill("mr", r.mr.url, `MR !${r.mr.number}`)}${r.commit ? lhPill("commit", r.commit.url, `Commit ${r.commit.sha.slice(0, 8)}`) : ""}</div>`
           : `<div class="local-err">⚠ ${esc(r.error)}</div>`;
         return `<div class="lh-d-block ${r.ok ? "" : "err"}"><div class="lh-sub">${projectIconHtml(r.projectPath)}${esc(projectMeta(r.projectPath).name)}</div>${links}${stepsHtml(r.steps)}</div>`;
       })
@@ -207,8 +207,8 @@ function renderLocalHistoryDetail() {
     </div>
     <div class="lh-detail-body">${body}</div>
     <div class="lf-actions" style="margin:0 20px 28px">
-      <button class="btn" id="lhd-back">← Volver al histórico</button>
-      ${primaryMr ? `<button class="btn btn-accent" id="lhd-openmr">Ver MR en Monstro</button>` : ""}
+      <button class="btn" id="lhd-back">${t("← Volver al histórico")}</button>
+      ${primaryMr ? `<button class="btn btn-accent" id="lhd-openmr">${t("Ver MR en Monstro")}</button>` : ""}
     </div>`;
   list.querySelectorAll("a[data-ext]").forEach((a) => a.addEventListener("click", (ev) => { ev.preventDefault(); window.monstro.openExternal(a.getAttribute("href")); }));
   $("#lhd-back").addEventListener("click", () => { state.local.historyDetail = null; renderLocal(); });
@@ -220,7 +220,7 @@ function renderLocal() {
   if (state.view !== "local") return;
   const l = state.local;
   if (l.loading) {
-    list.innerHTML = `<div class="loading">Escaneando repos locales…</div>`;
+    list.innerHTML = `<div class="loading">${t("Escaneando repos locales…")}</div>`;
     return;
   }
   if (l.form) return renderLocalForm();
@@ -229,11 +229,11 @@ function renderLocal() {
   if (l.tab === "empezar") return l.runView ? renderLocalRun() : l.planForm ? renderLocalPlanForm() : renderLocalStart();
   const isCrear = l.tab === "crear";
   const desc = isCrear
-    ? "Elige repo y rama/worktree de tu local para crear una <b>Issue/Epic</b> nueva y su <b>MR</b>."
-    : "Elige repo y rama/worktree de tu local para <b>vincular</b> el trabajo a una Issue/Epic existente y lanzar la <b>MR</b>.";
+    ? t("Elige repo y rama/worktree de tu local para crear una <b>Issue/Epic</b> nueva y su <b>MR</b>.")
+    : t("Elige repo y rama/worktree de tu local para <b>vincular</b> el trabajo a una Issue/Epic existente y lanzar la <b>MR</b>.");
   const head = `
     <div class="local-head">
-      <h2>${isCrear ? "Crear tarea" : "Vincular tarea"}</h2>
+      <h2>${isCrear ? t("Crear tarea") : t("Vincular tarea")}</h2>
       <p class="local-desc">${desc}</p>
     </div>`;
 
@@ -241,8 +241,8 @@ function renderLocal() {
     list.innerHTML =
       head +
       `<div class="local-empty">
-        <p>Aún no has indicado el <b>directorio raíz</b> donde tienes clonados tus repos de GitLab.</p>
-        <button class="btn btn-primary" id="local-pick">Elegir directorio raíz…</button>
+        <p>${t("Aún no has indicado el <b>directorio raíz</b> donde tienes clonados tus repos de GitLab.")}</p>
+        <button class="btn btn-primary" id="local-pick">${t("Elegir directorio raíz…")}</button>
       </div>`;
     $("#local-pick")?.addEventListener("click", pickLocalRoot);
     notifySelftestOnce();
@@ -258,8 +258,8 @@ function renderLocal() {
     const meta = info.error
       ? `<span class="local-err">${esc(info.error)}</span>`
       : `<span class="local-cur">⎇ ${esc(info.current || "—")}</span>
-         ${info.dirty ? `<span class="local-dirty" title="Cambios sin commitear">● sucio</span>` : ""}
-         <span class="local-count">${(info.branches || []).length} ramas · ${(info.worktrees || []).length} worktrees</span>`;
+         ${info.dirty ? `<span class="local-dirty" title="${esc(t("Cambios sin commitear"))}">${t("● sucio")}</span>` : ""}
+         <span class="local-count">${t("{n} ramas · {m} worktrees", { n: (info.branches || []).length, m: (info.worktrees || []).length })}</span>`;
     const selectable = Boolean(r.gitlabPath);
     const checked = l.selected.has(r.dir);
     return `
@@ -283,24 +283,24 @@ function renderLocal() {
       const known = folders[0].known;
       const groupHead =
         key === "__none__"
-          ? `<div class="local-group-head"><span class="local-badge none">Sin remote de GitLab</span><span class="local-group-count">${folders.length} carpeta${folders.length === 1 ? "" : "s"}</span></div>`
+          ? `<div class="local-group-head"><span class="local-badge none">${t("Sin remote de GitLab")}</span><span class="local-group-count">${folders.length === 1 ? t("{n} carpeta", { n: folders.length }) : t("{n} carpetas", { n: folders.length })}</span></div>`
           : `<div class="local-group-head">
               ${projectIconHtml(key)}
               <span class="ms-proj-name">${esc(projectMeta(key).name)}</span>
               <span class="local-group-path" title="${esc(key)}">${esc(key)}</span>
-              ${known ? `<span class="local-badge ok" title="Proyecto configurado en Monstro">✓</span>` : ""}
-              ${folders.length > 1 ? `<span class="local-group-count">${folders.length} carpetas</span>` : ""}
+              ${known ? `<span class="local-badge ok" title="${esc(t("Proyecto configurado en Monstro"))}">✓</span>` : ""}
+              ${folders.length > 1 ? `<span class="local-group-count">${t("{n} carpetas", { n: folders.length })}</span>` : ""}
             </div>`;
       return `<div class="local-group">${groupHead}<div class="local-group-folders">${folders.map(folderCard).join("")}</div></div>`;
     })
     .join("");
 
   const selCount = l.selected.size;
-  const btnLabel = isCrear ? (selCount > 1 ? "Crear épica →" : "Crear tarea →") : "Vincular →";
-  const selNote = isCrear && selCount > 1 ? " · se creará una Epic" : "";
+  const btnLabel = isCrear ? (selCount > 1 ? t("Crear épica →") : t("Crear tarea →")) : t("Vincular →");
+  const selNote = isCrear && selCount > 1 ? t(" · se creará una Epic") : "";
   const actionBar = repos.some((r) => r.gitlabPath)
     ? `<div class="local-actionbar">
-        <span class="local-selcount">${selCount} seleccionado${selCount === 1 ? "" : "s"}${selNote}</span>
+        <span class="local-selcount">${selCount === 1 ? t("{n} seleccionado", { n: selCount }) : t("{n} seleccionados", { n: selCount })}${selNote}</span>
         <button class="btn btn-primary" id="local-continue" ${selCount ? "" : "disabled"}>${btnLabel}</button>
       </div>`
     : "";
@@ -309,10 +309,10 @@ function renderLocal() {
     head +
     `<div class="local-root">
       <span class="local-root-path" title="${esc(l.rootDir)}">📁 ${esc(l.rootDir)}</span>
-      <button class="btn local-change" id="local-pick">Cambiar…</button>
+      <button class="btn local-change" id="local-pick">${t("Cambiar…")}</button>
     </div>
-    ${repos.length ? `<div class="local-repos">${cards}</div>` : `<div class="local-empty"><p>No se han encontrado repos git directamente bajo ese directorio.</p></div>`}
-    ${repos.length ? `<p class="local-legend"><span class="local-dirty">● sucio</span> = el repo tiene cambios sin commitear; se commitearán (con tu mensaje + el #ID de la issue) al crear la tarea.</p>` : ""}
+    ${repos.length ? `<div class="local-repos">${cards}</div>` : `<div class="local-empty"><p>${t("No se han encontrado repos git directamente bajo ese directorio.")}</p></div>`}
+    ${repos.length ? `<p class="local-legend"><span class="local-dirty">${t("● sucio")}</span> ${t("= el repo tiene cambios sin commitear; se commitearán (con tu mensaje + el #ID de la issue) al crear la tarea.")}</p>` : ""}
     ${actionBar}`;
   $("#local-pick")?.addEventListener("click", pickLocalRoot);
   list.querySelectorAll(".local-repo.selectable").forEach((el) =>
@@ -447,8 +447,8 @@ function mdField(id, label, value, rows, placeholder) {
   return `<div class="md-field">
     <div class="md-tabs">
       <span class="md-label">${label}</span>
-      <button type="button" class="md-tab on" data-tab="write">Editar</button>
-      <button type="button" class="md-tab" data-tab="preview">Vista previa</button>
+      <button type="button" class="md-tab on" data-tab="write">${t("Editar")}</button>
+      <button type="button" class="md-tab" data-tab="preview">${t("Vista previa")}</button>
     </div>
     <textarea id="${id}" rows="${rows}" placeholder="${esc(placeholder)}">${esc(value)}</textarea>
     <div class="md-preview hidden"></div>
@@ -463,7 +463,7 @@ function wireMdFields() {
       tab.addEventListener("click", () => {
         const preview = tab.dataset.tab === "preview";
         f.querySelectorAll(".md-tab").forEach((t) => t.classList.toggle("on", t === tab));
-        if (preview) pv.innerHTML = mdPreview(ta.value) || `<span class="muted">Nada que previsualizar</span>`;
+        if (preview) pv.innerHTML = mdPreview(ta.value) || `<span class="muted">${t("Nada que previsualizar")}</span>`;
         pv.classList.toggle("hidden", !preview);
         ta.classList.toggle("hidden", preview);
       }),
@@ -486,12 +486,12 @@ function slug(s) {
 function localBranchExtras(p, i, pfx) {
   const feat = isBaseBranch(p.sourceBranch)
     ? `<div class="lf-feat">
-        <label class="lf-check"><input type="checkbox" id="${pfx}-nb-on-${i}" ${p.createBranch ? "checked" : ""} /> Estás en <code>${esc(p.sourceBranch)}</code>: crea una rama <b>feature</b> con estos cambios antes de la MR</label>
+        <label class="lf-check"><input type="checkbox" id="${pfx}-nb-on-${i}" ${p.createBranch ? "checked" : ""} /> ${t("Estás en <code>{b}</code>: crea una rama <b>feature</b> con estos cambios antes de la MR", { b: esc(p.sourceBranch) })}</label>
         ${p.createBranch ? `<input class="lf-nb" id="${pfx}-nb-${i}" type="text" value="${esc(p.newBranch)}" placeholder="feature/mi-cambio" />` : ""}
       </div>`
     : "";
   const commit = p.info?.dirty
-    ? `<label class="lf-field">Mensaje del commit <span class="muted">(hay cambios sin commitear · se añadirá el #ID de la issue al final)</span><input id="${pfx}-commit-${i}" type="text" value="${esc(p.commitMessage)}" placeholder="Describe el cambio…" /></label>`
+    ? `<label class="lf-field">${t("Mensaje del commit")} <span class="muted">${t("(hay cambios sin commitear · se añadirá el #ID de la issue al final)")}</span><input id="${pfx}-commit-${i}" type="text" value="${esc(p.commitMessage)}" placeholder="${esc(t("Describe el cambio…"))}" /></label>`
     : "";
   return feat + commit;
 }
@@ -505,13 +505,13 @@ function localProjectBlock(p, i, epic) {
     : `<option value="${esc(p.sourceBranch)}">${esc(p.sourceBranch || "—")}</option>`;
   const fields = `
     <div class="lf-row">
-      <label>Rama origen<select id="lf-source-${i}">${branchOpts}</select></label>
-      <label>Rama destino<input id="lf-target-${i}" type="text" value="${esc(p.targetBranch)}" placeholder="development" /></label>
+      <label>${t("Rama origen")}<select id="lf-source-${i}">${branchOpts}</select></label>
+      <label>${t("Rama destino")}<input id="lf-target-${i}" type="text" value="${esc(p.targetBranch)}" placeholder="development" /></label>
     </div>
     ${localBranchExtras(p, i, "lf")}
-    <label class="lf-field">Título<input id="lf-title-${i}" type="text" value="${esc(p.title)}" placeholder="Título de la tarea" /></label>
-    ${mdField(`lf-desc-${i}`, "Descripción", p.description, epic ? 4 : 6, "Propósito de la tarea (markdown)")}
-    ${mdField(`lf-checklist-${i}`, `Puntos a comprobar <span class="muted">(uno por línea)</span>`, p.checklist, epic ? 3 : 5, "- Verificar que…")}`;
+    <label class="lf-field">${t("Título")}<input id="lf-title-${i}" type="text" value="${esc(p.title)}" placeholder="${esc(t("Título de la tarea"))}" /></label>
+    ${mdField(`lf-desc-${i}`, t("Descripción"), p.description, epic ? 4 : 6, t("Propósito de la tarea (markdown)"))}
+    ${mdField(`lf-checklist-${i}`, `${t("Puntos a comprobar")} <span class="muted">${t("(uno por línea)")}</span>`, p.checklist, epic ? 3 : 5, t("- Verificar que…"))}`;
   if (!epic) return `<div class="lf-proj">${fields}</div>`;
   return `<details class="lf-proj" open>
     <summary><span class="local-name">${esc(p.repo.name)}</span> <span class="local-badge ok">${esc(p.repo.gitlabPath)}</span></summary>
@@ -531,24 +531,24 @@ function localMetaSection(f) {
     return `<button type="button" class="lbl-chip ${on ? "on" : ""}" data-label="${esc(name)}"${style}>${esc(name)}</button>`;
   };
   const others = (l.groupLabels || []).map((x) => x.name).filter((n) => !USER_LABELS.includes(n) && !PRIO_LABELS.includes(n));
-  const msOpts = `<option value="">— sin milestone —</option>` + (l.milestones || []).map((m) => `<option value="${m.id}" ${String(m.id) === String(f.milestoneId) ? "selected" : ""}>${esc(m.title)}</option>`).join("");
+  const msOpts = `<option value="">${esc(t("— sin milestone —"))}</option>` + (l.milestones || []).map((m) => `<option value="${m.id}" ${String(m.id) === String(f.milestoneId) ? "selected" : ""}>${esc(m.title)}</option>`).join("");
   return `
     <div class="lf-meta">
-      <label class="lf-field">Milestone <span class="muted">(por defecto la actual por fechas)</span><select id="lf-milestone">${msOpts}</select></label>
+      <label class="lf-field">${t("Milestone")} <span class="muted">${t("(por defecto la actual por fechas)")}</span><select id="lf-milestone">${msOpts}</select></label>
       <div class="lf-labels">
-        <div class="lbl-group"><span class="lbl-cat">Tipo de usuario</span>${USER_LABELS.map(labelChip).join("")}</div>
-        <div class="lbl-group"><span class="lbl-cat">Prioridad</span>${PRIO_LABELS.map(labelChip).join("")}</div>
-        ${others.length ? `<details class="lbl-more"><summary>Más etiquetas (${others.length})</summary><div class="lbl-group">${others.map(labelChip).join("")}</div></details>` : ""}
+        <div class="lbl-group"><span class="lbl-cat">${t("Tipo de usuario")}</span>${USER_LABELS.map(labelChip).join("")}</div>
+        <div class="lbl-group"><span class="lbl-cat">${t("Prioridad")}</span>${PRIO_LABELS.map(labelChip).join("")}</div>
+        ${others.length ? `<details class="lbl-more"><summary>${t("Más etiquetas ({n})", { n: others.length })}</summary><div class="lbl-group">${others.map(labelChip).join("")}</div></details>` : ""}
       </div>
     </div>`;
 }
 
 function renderLocalForm() {
   const f = state.local.form;
-  const headTitle = f.epic ? `Crear épica · ${f.projects.length} proyectos` : `Crear tarea · ${esc(f.projects[0].repo.name)}`;
+  const headTitle = f.epic ? t("Crear épica · {n} proyectos", { n: f.projects.length }) : t("Crear tarea · {name}", { name: esc(f.projects[0].repo.name) });
   const headDesc = f.epic
-    ? `Se creará una <b>Epic</b> y, en cada proyecto, una <b>Issue</b> + una <b>MR</b> vinculadas a la Epic.`
-    : `${esc(f.projects[0].repo.gitlabPath)} — se creará una <b>Issue</b> y una <b>MR</b> con tu rama local.`;
+    ? t("Se creará una <b>Epic</b> y, en cada proyecto, una <b>Issue</b> + una <b>MR</b> vinculadas a la Epic.")
+    : `${esc(f.projects[0].repo.gitlabPath)} — ${t("se creará una <b>Issue</b> y una <b>MR</b> con tu rama local.")}`;
 
   list.innerHTML = `
     <div class="local-head">
@@ -557,19 +557,19 @@ function renderLocalForm() {
     </div>
     <div class="lf">
       <div class="lf-mode">
-        <span>Contenido:</span>
-        <button class="lf-chip ${f.mode === "ia" ? "on" : ""}" id="lf-mode-ia">✨ Generar con IA</button>
-        <button class="lf-chip ${f.mode === "manual" ? "on" : ""}" id="lf-mode-manual">✍️ A mano</button>
-        ${f.mode === "ia" ? `<button class="btn" id="lf-suggest" ${f.aiLoading ? "disabled" : ""}>${f.aiLoading ? "Generando…" : "Sugerir con IA"}</button>` : ""}
+        <span>${t("Contenido:")}</span>
+        <button class="lf-chip ${f.mode === "ia" ? "on" : ""}" id="lf-mode-ia">${t("✨ Generar con IA")}</button>
+        <button class="lf-chip ${f.mode === "manual" ? "on" : ""}" id="lf-mode-manual">${t("✍️ A mano")}</button>
+        ${f.mode === "ia" ? `<button class="btn" id="lf-suggest" ${f.aiLoading ? "disabled" : ""}>${f.aiLoading ? t("Generando…") : t("Sugerir con IA")}</button>` : ""}
       </div>
       ${f.error ? `<div class="error-box">${esc(f.error)}</div>` : ""}
-      ${f.epic ? `<label class="lf-field">Título de la Epic<input id="lf-epic-title" type="text" value="${esc(f.epicTitle)}" placeholder="Título de la Epic" /></label>` : ""}
+      ${f.epic ? `<label class="lf-field">${t("Título de la Epic")}<input id="lf-epic-title" type="text" value="${esc(f.epicTitle)}" placeholder="${esc(t("Título de la Epic"))}" /></label>` : ""}
       ${f.projects.map((p, i) => localProjectBlock(p, i, f.epic)).join("")}
       ${localMetaSection(f)}
-      <label class="lf-check"><input type="checkbox" id="lf-push" ${f.push ? "checked" : ""} /> Hacer push de las ramas a origin antes de crear las MR</label>
+      <label class="lf-check"><input type="checkbox" id="lf-push" ${f.push ? "checked" : ""} /> ${t("Hacer push de las ramas a origin antes de crear las MR")}</label>
       <div class="lf-actions">
-        <button class="btn" id="lf-cancel">← Volver</button>
-        <button class="btn btn-primary" id="lf-create" ${f.creating ? "disabled" : ""}>${f.creating ? "Creando…" : f.epic ? "Crear Epic + tareas" : "Crear Issue + MR"}</button>
+        <button class="btn" id="lf-cancel">${t("← Volver")}</button>
+        <button class="btn btn-primary" id="lf-create" ${f.creating ? "disabled" : ""}>${f.creating ? t("Creando…") : f.epic ? t("Crear Epic + tareas") : t("Crear Issue + MR")}</button>
       </div>
     </div>`;
 
@@ -625,7 +625,7 @@ async function suggestLocalTask() {
       (out.labels || []).forEach((n) => f.labels.add(n));
     }
   } catch (err) {
-    f.error = `IA: ${String(err.message || err)}`;
+    f.error = `${t("IA:")} ${String(err.message || err)}`;
   } finally {
     f.aiLoading = false;
     renderLocal();
@@ -637,20 +637,20 @@ const parseChecklist = (text) => (text || "").split("\n").map((s) => s.replace(/
 function confirmCreateLocalTask() {
   const f = state.local.form;
   syncLocalForm();
-  if (f.epic && !f.epicTitle.trim()) { f.error = "El título de la Epic es obligatorio."; renderLocal(); return; }
-  if (f.projects.some((p) => !p.title.trim())) { f.error = "Cada proyecto necesita un título."; renderLocal(); return; }
+  if (f.epic && !f.epicTitle.trim()) { f.error = t("El título de la Epic es obligatorio."); renderLocal(); return; }
+  if (f.projects.some((p) => !p.title.trim())) { f.error = t("Cada proyecto necesita un título."); renderLocal(); return; }
   const summary = f.epic
-    ? `Se creará la <b>Epic</b> «${esc(f.epicTitle)}» y, en ${f.projects.length} proyectos, una <b>Issue</b> + una <b>MR</b> cada uno${f.push ? ", tras <b>pushear</b> las ramas" : ""}. Acción irreversible.`
-    : `En <b>${esc(f.projects[0].repo.gitlabPath)}</b> se creará una <b>Issue</b> y una <b>MR</b> <code>${esc(f.projects[0].sourceBranch)} → ${esc(f.projects[0].targetBranch)}</code>${f.push ? ", tras <b>pushear</b> la rama" : ""}. Acción irreversible.`;
+    ? t("Se creará la <b>Epic</b> «{title}» y, en {n} proyectos, una <b>Issue</b> + una <b>MR</b> cada uno{push}. Acción irreversible.", { title: esc(f.epicTitle), n: f.projects.length, push: f.push ? t(", tras <b>pushear</b> las ramas") : "" })
+    : t("En <b>{path}</b> se creará una <b>Issue</b> y una <b>MR</b> <code>{src} → {dst}</code>{push}. Acción irreversible.", { path: esc(f.projects[0].repo.gitlabPath), src: esc(f.projects[0].sourceBranch), dst: esc(f.projects[0].targetBranch), push: f.push ? t(", tras <b>pushear</b> la rama") : "" });
   const root = $("#modal-root");
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal">
-        <h3>↗ Crear en GitLab</h3>
+        <h3>${t("↗ Crear en GitLab")}</h3>
         <p class="muted">${summary}</p>
         <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Cancelar</button>
-          <button class="btn btn-primary" id="modal-confirm">Crear en GitLab</button>
+          <button class="btn" id="modal-cancel">${t("Cancelar")}</button>
+          <button class="btn btn-primary" id="modal-confirm">${t("Crear en GitLab")}</button>
         </div>
       </div>
     </div>`;
@@ -683,10 +683,10 @@ async function createLocalTask() {
     if (f.epic) {
       const res = await window.monstro.localCreateEpicTask({ epicTitle: f.epicTitle.trim(), epicDescription: "", labels, milestoneId: f.milestoneId, projects: f.projects.map((p) => localProjPayload(p, f.push)) });
       const ok = res.results.filter((x) => x.ok).length;
-      toast(`Epic + ${ok}/${res.results.length} tareas creadas`, ok === res.results.length ? "ok" : "warn");
+      toast(t("Epic + {ok}/{total} tareas creadas", { ok, total: res.results.length }), ok === res.results.length ? "ok" : "warn");
     } else {
       await window.monstro.localCreateTask({ ...localProjPayload(f.projects[0], f.push), labels, milestoneId: f.milestoneId });
-      toast("Issue + MR creadas ✓", "ok");
+      toast(t("Issue + MR creadas ✓"), "ok");
     }
     // #1: al terminar, llevar al histórico actualizado (con el detalle de lo creado y el log de pasos).
     state.local.form = null;
@@ -695,7 +695,7 @@ async function createLocalTask() {
   } catch (err) {
     f.error = String(err.message || err);
     f.creating = false;
-    toast("Error al crear", "err");
+    toast(t("Error al crear"), "err");
     renderLocal();
   }
 }
@@ -717,7 +717,7 @@ async function openLocalMrInMonstro(mr) {
   try {
     await openDetail(mr.number, "conv", mr.projectPath);
   } catch {
-    toast("Abre la MR desde la lista (puede tardar en aparecer)", "");
+    toast(t("Abre la MR desde la lista (puede tardar en aparecer)"), "");
   }
 }
 
@@ -761,7 +761,7 @@ function syncLocalLinkForm() {
 function renderLocalLinkForm() {
   const f = state.local.linkForm;
   const resultsHtml = f.searching
-    ? `<div class="loading">Buscando…</div>`
+    ? `<div class="loading">${t("Buscando…")}</div>`
     : f.results.length
       ? f.results
           .map(
@@ -773,7 +773,7 @@ function renderLocalLinkForm() {
           )
           .join("")
       : f.search
-        ? `<div class="muted lf-field">Sin resultados.</div>`
+        ? `<div class="muted lf-field">${t("Sin resultados.")}</div>`
         : "";
   const projBlocks = f.projects
     .map((p, i) => {
@@ -784,29 +784,29 @@ function renderLocalLinkForm() {
       return `<div class="lf-proj">
         <div class="lf-proj-name"><span class="local-name">${esc(p.repo.name)}</span> <span class="local-badge ok">${esc(p.repo.gitlabPath)}</span></div>
         <div class="lf-row">
-          <label>Rama origen<select id="llf-source-${i}">${opts}</select></label>
-          <label>Rama destino<input id="llf-target-${i}" type="text" value="${esc(p.targetBranch)}" placeholder="development" /></label>
+          <label>${t("Rama origen")}<select id="llf-source-${i}">${opts}</select></label>
+          <label>${t("Rama destino")}<input id="llf-target-${i}" type="text" value="${esc(p.targetBranch)}" placeholder="development" /></label>
         </div>
         ${localBranchExtras(p, i, "llf")}
-        <label class="lf-field">Título de la MR<input id="llf-title-${i}" type="text" value="${esc(p.title)}" placeholder="Título de la MR" /></label>
+        <label class="lf-field">${t("Título de la MR")}<input id="llf-title-${i}" type="text" value="${esc(p.title)}" placeholder="${esc(t("Título de la MR"))}" /></label>
       </div>`;
     })
     .join("");
   list.innerHTML = `
     <div class="local-head">
-      <h2>Vincular tarea · ${f.projects.length} proyecto${f.projects.length === 1 ? "" : "s"}</h2>
-      <p class="local-desc">Busca una <b>Issue o Epic</b> existente y crea una <b>MR</b> en cada proyecto vinculada a ella.</p>
+      <h2>${f.projects.length === 1 ? t("Vincular tarea · {n} proyecto", { n: f.projects.length }) : t("Vincular tarea · {n} proyectos", { n: f.projects.length })}</h2>
+      <p class="local-desc">${t("Busca una <b>Issue o Epic</b> existente y crea una <b>MR</b> en cada proyecto vinculada a ella.")}</p>
     </div>
     <div class="lf">
       ${f.error ? `<div class="error-box">${esc(f.error)}</div>` : ""}
-      <label class="lf-field">Issue / Epic destino<input id="llf-search" type="text" value="${esc(f.search)}" placeholder="Buscar por título… (Enter)" /></label>
+      <label class="lf-field">${t("Issue / Epic destino")}<input id="llf-search" type="text" value="${esc(f.search)}" placeholder="${esc(t("Buscar por título… (Enter)"))}" /></label>
       <div class="llf-results">${resultsHtml}</div>
-      ${f.issue ? `<div class="llf-chosen">Vinculando a: <b>${esc(f.issue.title)}</b> <span class="muted">${esc(f.issue.projectPath)}#${esc(String(f.issue.iid))}</span></div>` : ""}
+      ${f.issue ? `<div class="llf-chosen">${t("Vinculando a:")} <b>${esc(f.issue.title)}</b> <span class="muted">${esc(f.issue.projectPath)}#${esc(String(f.issue.iid))}</span></div>` : ""}
       ${projBlocks}
-      <label class="lf-check"><input type="checkbox" id="llf-push" ${f.push ? "checked" : ""} /> Hacer push de las ramas antes de crear las MR</label>
+      <label class="lf-check"><input type="checkbox" id="llf-push" ${f.push ? "checked" : ""} /> ${t("Hacer push de las ramas antes de crear las MR")}</label>
       <div class="lf-actions">
-        <button class="btn" id="llf-cancel">← Volver</button>
-        <button class="btn btn-primary" id="llf-create" ${f.creating || !f.issue ? "disabled" : ""}>${f.creating ? "Creando…" : "Crear MR(s)"}</button>
+        <button class="btn" id="llf-cancel">${t("← Volver")}</button>
+        <button class="btn btn-primary" id="llf-create" ${f.creating || !f.issue ? "disabled" : ""}>${f.creating ? t("Creando…") : t("Crear MR(s)")}</button>
       </div>
     </div>`;
   $("#llf-cancel").addEventListener("click", closeLocalLinkForm);
@@ -848,17 +848,17 @@ async function searchLinkIssues() {
 function confirmLinkTask() {
   const f = state.local.linkForm;
   syncLocalLinkForm();
-  if (!f.issue) { f.error = "Elige una Issue/Epic."; renderLocal(); return; }
-  if (f.projects.some((p) => !p.title.trim())) { f.error = "Cada proyecto necesita un título de MR."; renderLocal(); return; }
+  if (!f.issue) { f.error = t("Elige una Issue/Epic."); renderLocal(); return; }
+  if (f.projects.some((p) => !p.title.trim())) { f.error = t("Cada proyecto necesita un título de MR."); renderLocal(); return; }
   const root = $("#modal-root");
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal">
-        <h3>↗ Vincular en GitLab</h3>
-        <p class="muted">Se crearán ${f.projects.length} MR vinculadas a <b>${esc(f.issue.title)}</b> (${esc(f.issue.projectPath)}#${esc(String(f.issue.iid))})${f.push ? ", tras <b>pushear</b> las ramas" : ""}. Acción irreversible.</p>
+        <h3>${t("↗ Vincular en GitLab")}</h3>
+        <p class="muted">${t("Se crearán {n} MR vinculadas a <b>{title}</b> ({path}#{iid}){push}. Acción irreversible.", { n: f.projects.length, title: esc(f.issue.title), path: esc(f.issue.projectPath), iid: esc(String(f.issue.iid)), push: f.push ? t(", tras <b>pushear</b> las ramas") : "" })}</p>
         <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Cancelar</button>
-          <button class="btn btn-primary" id="modal-confirm">Crear en GitLab</button>
+          <button class="btn" id="modal-cancel">${t("Cancelar")}</button>
+          <button class="btn btn-primary" id="modal-confirm">${t("Crear en GitLab")}</button>
         </div>
       </div>
     </div>`;
@@ -875,7 +875,7 @@ async function createLinkTask() {
   try {
     const res = await window.monstro.localLinkTask({ issue: f.issue, projects: f.projects.map((p) => localProjPayload(p, f.push)) });
     const ok = res.results.filter((x) => x.ok).length;
-    toast(`${ok}/${res.results.length} MR creadas`, ok === res.results.length ? "ok" : "warn");
+    toast(t("{ok}/{total} MR creadas", { ok, total: res.results.length }), ok === res.results.length ? "ok" : "warn");
     // #1: al terminar, al histórico actualizado.
     state.local.linkForm = null;
     state.local.selected.clear();
@@ -883,7 +883,7 @@ async function createLinkTask() {
   } catch (err) {
     f.error = String(err.message || err);
     f.creating = false;
-    toast("Error al vincular", "err");
+    toast(t("Error al vincular"), "err");
     renderLocal();
   }
 }

@@ -1,18 +1,18 @@
 "use strict";
 
 function stateChip(pr) {
-  if (pr.state === "MERGED") return `<span class="chip chip-merged">Fusionada</span>`;
-  if (pr.state === "CLOSED") return `<span class="chip chip-closed">Cerrada</span>`;
-  if (pr.isDraft) return `<span class="chip chip-draft">Borrador</span>`;
-  return `<span class="chip chip-open">Abierta</span>`;
+  if (pr.state === "MERGED") return `<span class="chip chip-merged">${t("Fusionada")}</span>`;
+  if (pr.state === "CLOSED") return `<span class="chip chip-closed">${t("Cerrada")}</span>`;
+  if (pr.isDraft) return `<span class="chip chip-draft">${t("Borrador")}</span>`;
+  return `<span class="chip chip-open">${t("Abierta")}</span>`;
 }
 
 function reviewChip(pr) {
   if (pr.state !== "OPEN") return "";
   switch (pr.reviewDecision) {
-    case "APPROVED": return `<span class="chip chip-approved">✓ Aprobada</span>`;
-    case "CHANGES_REQUESTED": return `<span class="chip chip-changes">± Cambios pedidos</span>`;
-    case "REVIEW_REQUIRED": return `<span class="chip chip-review">Falta revisión</span>`;
+    case "APPROVED": return `<span class="chip chip-approved">✓ ${t("Aprobada")}</span>`;
+    case "CHANGES_REQUESTED": return `<span class="chip chip-changes">± ${t("Cambios pedidos")}</span>`;
+    case "REVIEW_REQUIRED": return `<span class="chip chip-review">${t("Falta revisión")}</span>`;
     default: return "";
   }
 }
@@ -20,8 +20,8 @@ function reviewChip(pr) {
 function mergeStateChip(pr) {
   if (pr.state !== "OPEN") return "";
   if (pr.mergeable === "CONFLICTING" || pr.mergeStateStatus === "DIRTY")
-    return `<span class="chip chip-conflict">Conflictos</span>`;
-  if (pr.mergeStateStatus === "BEHIND") return `<span class="chip chip-behind">Rama atrasada</span>`;
+    return `<span class="chip chip-conflict">${t("Conflictos")}</span>`;
+  if (pr.mergeStateStatus === "BEHIND") return `<span class="chip chip-behind">${t("Rama atrasada")}</span>`;
   return "";
 }
 
@@ -29,11 +29,11 @@ function checksIcon(pr) {
   const rollup = pr.commits?.nodes?.[0]?.commit?.statusCheckRollup;
   if (!rollup) return "";
   const map = {
-    SUCCESS: ["✓", "checks-success", "Checks en verde"],
-    FAILURE: ["✗", "checks-failure", "Checks fallando"],
-    ERROR: ["✗", "checks-failure", "Checks con error"],
-    PENDING: ["●", "checks-pending", "Checks en curso"],
-    EXPECTED: ["●", "checks-pending", "Checks esperados"],
+    SUCCESS: ["✓", "checks-success", t("Checks en verde")],
+    FAILURE: ["✗", "checks-failure", t("Checks fallando")],
+    ERROR: ["✗", "checks-failure", t("Checks con error")],
+    PENDING: ["●", "checks-pending", t("Checks en curso")],
+    EXPECTED: ["●", "checks-pending", t("Checks esperados")],
   };
   const [icon, cls, title] = map[rollup.state] || ["", "", ""];
   return icon ? `<span class="checks ${cls}" title="${title}">${icon}</span>` : "";
@@ -53,7 +53,7 @@ function approvalFaces(pr) {
   const shown = approvers.slice(0, MAX_FACES);
   const extra = approvers.length - shown.length;
   return `
-    <span class="facepile" title="Aprobada por ${esc(approvers.map((a) => a.login).join(", "))}">
+    <span class="facepile" title="${t("Aprobada por {who}", { who: esc(approvers.map((a) => a.login).join(", ")) })}">
       ${shown.map((a) => `
         <span class="face">
           <img src="${esc(a.avatarUrl)}" alt="${esc(a.login)}" />
@@ -107,7 +107,7 @@ function renderList() {
     return;
   }
   if (!prs.length) {
-    list.innerHTML = `<div class="empty"><span class="big">${mascot(48)}</span>Nada por aquí. Todo tranquilo.</div>`;
+    list.innerHTML = `<div class="empty"><span class="big">${mascot(48)}</span>${t("Nada por aquí. Todo tranquilo.")}</div>`;
     notifySelftestOnce();
     return;
   }
@@ -130,7 +130,7 @@ function renderList() {
             <span class="arrow">→</span>
             <span class="branch" title="${esc(pr.baseRefName)}">${esc(pr.baseRefName)}</span>
           </span>
-          <span class="meta-mini">${esc(pr.author?.login || "?")} · ${timeAgo(pr.updatedAt)} · <span class="checks-success">+${pr.additions ?? 0}</span>/<span class="checks-failure">−${pr.deletions ?? 0}</span> · 💬 ${pr.comments?.totalCount ?? 0}${state.draftKeys.has(`${pr.repository?.nameWithOwner || state.repo}#${pr.number}`) ? " · 📝 borradores" : ""}</span>
+          <span class="meta-mini">${esc(pr.author?.login || "?")} · ${timeAgo(pr.updatedAt)} · <span class="checks-success">+${pr.additions ?? 0}</span>/<span class="checks-failure">−${pr.deletions ?? 0}</span> · 💬 ${pr.comments?.totalCount ?? 0}${state.draftKeys.has(`${pr.repository?.nameWithOwner || state.repo}#${pr.number}`) ? ` · 📝 ${t("borradores")}` : ""}</span>
         </div>
       </article>`,
     )
@@ -154,10 +154,10 @@ function canMerge(pr) {
 }
 
 function mergeBlockReason(pr) {
-  if (pr.state !== "OPEN") return "La PR no está abierta";
-  if (pr.isDraft) return "Es un borrador";
-  if (pr.mergeable === "CONFLICTING") return "Tiene conflictos con la base";
-  if (pr.mergeStateStatus === "BEHIND") return "La rama está atrasada: actualiza primero (rebase)";
-  if (pr.mergeStateStatus === "BLOCKED") return "Bloqueada por checks o revisiones requeridas";
+  if (pr.state !== "OPEN") return t("La PR no está abierta");
+  if (pr.isDraft) return t("Es un borrador");
+  if (pr.mergeable === "CONFLICTING") return t("Tiene conflictos con la base");
+  if (pr.mergeStateStatus === "BEHIND") return t("La rama está atrasada: actualiza primero (rebase)");
+  if (pr.mergeStateStatus === "BLOCKED") return t("Bloqueada por checks o revisiones requeridas");
   return "";
 }

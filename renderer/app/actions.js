@@ -3,16 +3,16 @@
 async function updateBranch(pr) {
   const btn = $("#act-update");
   btn.disabled = true;
-  btn.textContent = "Rebasando…";
+  btn.textContent = t("Rebasando…");
   try {
     await window.monstro.updateBranch(pr.id);
-    toast(`#${pr.number}: rama actualizada con rebase`, "ok");
+    toast(t("#{n}: rama actualizada con rebase", { n: pr.number }), "ok");
     await refresh();
     openDetail(pr.number, state.detailTab);
   } catch (err) {
-    toast(`Update falló: ${String(err.message || err)}`, "err");
+    toast(t("Update falló: {err}", { err: String(err.message || err) }), "err");
     btn.disabled = false;
-    btn.textContent = "⤴ Update branch (rebase)";
+    btn.textContent = t("⤴ Update branch (rebase)");
   }
 }
 
@@ -27,18 +27,18 @@ function myApprovedReview(pr) {
 
 function confirmUnapprove(pr) {
   const review = myApprovedReview(pr);
-  if (!review?.databaseId) return toast("No encuentro tu review aprobada (refresca e inténtalo)", "err");
+  if (!review?.databaseId) return toast(t("No encuentro tu review aprobada (refresca e inténtalo)"), "err");
   const root = $("#modal-root");
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal">
-        <h3>↩︎ Quitar aprobación de #${pr.number}</h3>
+        <h3>↩︎ ${t("Quitar aprobación de #{n}", { n: pr.number })}</h3>
         <p>${esc(pr.title)}</p>
-        <p class="muted">Tu review aprobada se descarta: la PR deja de contar con tu ✓. GitHub lo registra en la conversación junto al motivo.</p>
-        <input type="text" id="dismiss-reason" placeholder="Motivo (opcional)" style="width:100%;margin-top:8px" class="modal-input" />
+        <p class="muted">${t("Tu review aprobada se descarta: la PR deja de contar con tu ✓. GitHub lo registra en la conversación junto al motivo.")}</p>
+        <input type="text" id="dismiss-reason" placeholder="${t("Motivo (opcional)")}" style="width:100%;margin-top:8px" class="modal-input" />
         <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Cancelar</button>
-          <button class="btn btn-primary" id="modal-confirm">Quitar aprobación</button>
+          <button class="btn" id="modal-cancel">${t("Cancelar")}</button>
+          <button class="btn btn-primary" id="modal-confirm">${t("Quitar aprobación")}</button>
         </div>
       </div>
     </div>`;
@@ -51,11 +51,11 @@ function confirmUnapprove(pr) {
     root.innerHTML = "";
     try {
       await window.monstro.dismissReview(detailRepo(), pr.number, review.databaseId, message);
-      toast(`Aprobación retirada de #${pr.number}`, "ok");
+      toast(t("Aprobación retirada de #{n}", { n: pr.number }), "ok");
       await refresh();
       openDetail(pr.number, state.detailTab);
     } catch (err) {
-      toast(`No se pudo retirar: ${String(err.message || err)}`, "err");
+      toast(t("No se pudo retirar: {err}", { err: String(err.message || err) }), "err");
     }
   });
 }
@@ -65,12 +65,12 @@ function confirmApprove(pr) {
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal">
-        <h3>✅ Aprobar #${pr.number}</h3>
+        <h3>✅ ${t("Aprobar #{n}", { n: pr.number })}</h3>
         <p>${esc(pr.title)}</p>
-        <p class="muted">Publica una review de aprobación sin comentarios. Si tienes borradores pendientes, no se tocan.</p>
+        <p class="muted">${t("Publica una review de aprobación sin comentarios. Si tienes borradores pendientes, no se tocan.")}</p>
         <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Cancelar</button>
-          <button class="btn btn-primary" id="modal-confirm">Aprobar</button>
+          <button class="btn" id="modal-cancel">${t("Cancelar")}</button>
+          <button class="btn btn-primary" id="modal-confirm">${t("Aprobar")}</button>
         </div>
       </div>
     </div>`;
@@ -82,11 +82,11 @@ function confirmApprove(pr) {
     root.innerHTML = "";
     try {
       await window.monstro.submitReview(detailRepo(), pr.number, { event: "APPROVE" });
-      toast(`#${pr.number} aprobada ✅`, "ok");
+      toast(t("#{n} aprobada ✅", { n: pr.number }), "ok");
       await refresh();
       openDetail(pr.number, state.detailTab);
     } catch (err) {
-      toast(`No se pudo aprobar: ${String(err.message || err)}`, "err");
+      toast(t("No se pudo aprobar: {err}", { err: String(err.message || err) }), "err");
     }
   });
 }
@@ -96,13 +96,13 @@ function confirmMerge(pr) {
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal">
-        <h3>Merge de #${pr.number}</h3>
-        <p><b>${esc(pr.headRefName)}</b> → <b>${esc(pr.baseRefName)}</b> con <b>merge commit</b>.</p>
-        <p class="muted">Squash no es una opción. Nunca lo fue.</p>
-        ${pr.isCrossRepository ? "" : `<label><input type="checkbox" id="del-branch" checked /> Borrar la rama tras el merge</label>`}
+        <h3>${t("Merge de #{n}", { n: pr.number })}</h3>
+        <p><b>${esc(pr.headRefName)}</b> → <b>${esc(pr.baseRefName)}</b> ${t("con <b>merge commit</b>.")}</p>
+        <p class="muted">${t("Squash no es una opción. Nunca lo fue.")}</p>
+        ${pr.isCrossRepository ? "" : `<label><input type="checkbox" id="del-branch" checked /> ${t("Borrar la rama tras el merge")}</label>`}
         <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Cancelar</button>
-          <button class="btn btn-primary" id="modal-confirm">Confirmar merge</button>
+          <button class="btn" id="modal-cancel">${t("Cancelar")}</button>
+          <button class="btn btn-primary" id="modal-confirm">${t("Confirmar merge")}</button>
         </div>
       </div>
     </div>`;
@@ -121,20 +121,20 @@ function confirmMerge(pr) {
         headRefName: pr.headRefName,
         isCrossRepository: pr.isCrossRepository,
       });
-      toast(res.merged ? `#${pr.number} fusionada (merge commit)${res.branchDeleted ? " · rama borrada" : ""}` : "Merge no completado", res.merged ? "ok" : "err");
+      toast(res.merged ? `${t("#{n} fusionada (merge commit)", { n: pr.number })}${res.branchDeleted ? t(" · rama borrada") : ""}` : t("Merge no completado"), res.merged ? "ok" : "err");
       // Tras un merge de hotfix/* (solo GitLab), ofrecer replicar el contenido a otras ramas.
       // En su propio try: un fallo aquí no debe mostrar "Merge falló" (el merge ya fue bien).
       if (res.merged && res.sha && shouldOfferCherryPick(pr)) {
         try {
           await offerCherryPick(pr, res.sha);
         } catch (cpErr) {
-          toast(`No se pudo ofrecer el cherry-pick: ${String(cpErr.message || cpErr)}`, "err");
+          toast(t("No se pudo ofrecer el cherry-pick: {err}", { err: String(cpErr.message || cpErr) }), "err");
         }
       }
       closeDetail();
       await refresh();
     } catch (err) {
-      toast(`Merge falló: ${String(err.message || err)}`, "err");
+      toast(t("Merge falló: {err}", { err: String(err.message || err) }), "err");
     }
   });
 }
@@ -144,10 +144,13 @@ function confirmMerge(pr) {
 /** ¿Esta MR mergeada dispara el ofrecimiento de cherry-pick? */
 function shouldOfferCherryPick(pr) {
   if (!isGitlab()) return false;
+  const base = String(pr.baseRefName || "");
+  // Dispara si la rama destino es una release branch (rb/ o rb/-mx)
+  if (/(^|\/)rb\//.test(base) || base.endsWith("-mx")) return true;
+  // Dispara si la rama origen lleva el prefijo hotfix/
   const cp = state.config?.cherryPick;
   const prefix = cp?.prefix?.trim();
-  if (!prefix) return false;
-  return String(pr.headRefName || "").startsWith(prefix);
+  return !!prefix && String(pr.headRefName || "").startsWith(prefix);
 }
 
 /** Deriva la rama hermana de una release branch: mx ⇄ sin mx. null si no aplica. */
@@ -184,9 +187,9 @@ async function offerCherryPick(pr, sha) {
   root.innerHTML = `
     <div class="modal-backdrop" id="cp-backdrop">
       <div class="modal">
-        <h3>Cherry-pick de #${pr.number}</h3>
-        <p class="muted"><b>${esc(pr.headRefName)}</b> se mergeó en <b>${esc(pr.baseRefName)}</b>. ¿Replico su contenido a estas ramas?</p>
-        <p class="muted">Comprobando conflictos…</p>
+        <h3>${t("Cherry-pick de #{n}", { n: pr.number })}</h3>
+        <p class="muted"><b>${esc(pr.headRefName)}</b> ${t("se mergeó en")} <b>${esc(pr.baseRefName)}</b>. ${t("¿Replico su contenido a estas ramas?")}</p>
+        <p class="muted">${t("Comprobando conflictos…")}</p>
       </div>
     </div>`;
 
@@ -201,20 +204,20 @@ async function offerCherryPick(pr, sha) {
         const ok = c.ok;
         const id = `cp-b-${i}`;
         const status = ok
-          ? `<span class="checks-success">✓ aplica limpio</span>`
-          : `<span class="checks-failure">✗ ${esc(c.error || "conflicto")}</span>`;
+          ? `<span class="checks-success">✓ ${t("aplica limpio")}</span>`
+          : `<span class="checks-failure">✗ ${esc(c.error || t("conflicto"))}</span>`;
         return `<label class="cp-row"><input type="checkbox" id="${id}" data-branch="${esc(c.branch)}" ${ok ? "checked" : ""} /> <b>${esc(c.branch)}</b> — ${status}</label>`;
       })
       .join("");
     root.innerHTML = `
       <div class="modal-backdrop" id="cp-backdrop">
         <div class="modal">
-          <h3>Cherry-pick de #${pr.number}</h3>
-          <p class="muted"><b>${esc(pr.headRefName)}</b> → <b>${esc(pr.baseRefName)}</b>. Replica el contenido a:</p>
+          <h3>${t("Cherry-pick de #{n}", { n: pr.number })}</h3>
+          <p class="muted"><b>${esc(pr.headRefName)}</b> → <b>${esc(pr.baseRefName)}</b>. ${t("Replica el contenido a:")}</p>
           <div class="cp-targets">${rows}</div>
           <div class="modal-actions">
-            <button class="btn" id="cp-skip">Ahora no</button>
-            <button class="btn btn-primary" id="cp-go">Hacer cherry-pick</button>
+            <button class="btn" id="cp-skip">${t("Ahora no")}</button>
+            <button class="btn btn-primary" id="cp-go">${t("Hacer cherry-pick")}</button>
           </div>
         </div>
       </div>`;
@@ -238,8 +241,8 @@ async function offerCherryPick(pr, sha) {
       }
       const ok = results.filter((r) => r.ok).map((r) => r.branch);
       const failed = results.filter((r) => !r.ok);
-      if (ok.length) toast(`Cherry-pick OK: ${ok.join(", ")}`, "ok");
-      for (const f of failed) toast(`Cherry-pick falló en ${f.branch}: ${f.error}`, "err");
+      if (ok.length) toast(t("Cherry-pick OK: {branches}", { branches: ok.join(", ") }), "ok");
+      for (const f of failed) toast(t("Cherry-pick falló en {branch}: {err}", { branch: f.branch, err: f.error }), "err");
       resolve();
     });
   });

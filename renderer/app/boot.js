@@ -4,7 +4,7 @@ function renderRepoSelect() {
   const select = $("#repo-select");
   const repos = state.config?.repos || [];
   const allOption = repos.length > 1
-    ? `<option value="${ALL_REPOS}" ${state.repo === ALL_REPOS ? "selected" : ""}>Todos los repos</option>`
+    ? `<option value="${ALL_REPOS}" ${state.repo === ALL_REPOS ? "selected" : ""}>${t("Todos los repos")}</option>`
     : "";
   select.innerHTML = allOption + repos
     .map((r) => `<option value="${esc(r)}" ${r === state.repo ? "selected" : ""}>${esc(r)}</option>`)
@@ -55,6 +55,9 @@ async function boot() {
   state.config = await window.monstro.getConfig();
   applyTheme(state.config.theme);
   applyUiTheme(state.config.uiTheme);
+  // Idioma (ES por defecto / del sistema): fija LANG y traduce el chrome estático del index.html.
+  applyLang(state.config);
+  localizeStatic();
   // Instalación nueva (sin proveedor ni repos): primero elegimos GitHub o GitLab.
   // Los instalados de antes (con repos pero sin provider) siguen en GitHub por defecto.
   if (!state.config.provider && !state.config.repos.length) {
@@ -372,25 +375,25 @@ function paletteEntries() {
       run: () => exitHistoryToPR(pr.number),
     });
   }
-  entries.push({ label: "Ir a: Histórico", hint: "grafo de ramas", run: enterHistory });
-  if (isGitlab()) entries.push({ label: "Ir a: Milestones", hint: "tareas por persona", run: enterMilestones });
-  if (isGitlab()) entries.push({ label: "Ir a: Releases · Ramas", hint: "generar release branches", run: () => enterReleases("branches") });
-  if (isGitlab()) entries.push({ label: "Ir a: Releases · Publicar", hint: "crear tag + release", run: () => enterReleases("publish") });
-  if (isGitlab()) entries.push({ label: "Trabajo local: Empezar tarea", hint: "elegir Epic/Issue → plan → agentes", run: () => enterLocal("empezar") });
-  if (isGitlab()) entries.push({ label: "Trabajo local: Crear tarea", hint: "Issue/Epic + MR desde local", run: () => enterLocal("crear") });
-  if (isGitlab()) entries.push({ label: "Trabajo local: Vincular tarea", hint: "vincular local a una tarea existente", run: () => enterLocal("vincular") });
-  if (isGitlab()) entries.push({ label: "Trabajo local: Histórico", hint: "trabajos creados desde Monstro", run: () => enterLocal("historico") });
-  for (const [bucket, label] of [["open", "Abiertas"], ["mine", "Mías"], ["review", "Para revisar"], ["draft", "Borradores"], ["merged", "Fusionadas"], ["closed", "Cerradas"]]) {
-    entries.push({ label: `Ir a: ${label}`, hint: "bucket", run: () => switchBucket(bucket) });
+  entries.push({ label: t("Ir a: Histórico"), hint: t("grafo de ramas"), run: enterHistory });
+  if (isGitlab()) entries.push({ label: t("Ir a: Milestones"), hint: t("tareas por persona"), run: enterMilestones });
+  if (isGitlab()) entries.push({ label: t("Ir a: Releases · Ramas"), hint: t("generar release branches"), run: () => enterReleases("branches") });
+  if (isGitlab()) entries.push({ label: t("Ir a: Releases · Publicar"), hint: t("crear tag + release"), run: () => enterReleases("publish") });
+  if (isGitlab()) entries.push({ label: t("Trabajo local: Empezar tarea"), hint: t("elegir Epic/Issue → plan → agentes"), run: () => enterLocal("empezar") });
+  if (isGitlab()) entries.push({ label: t("Trabajo local: Crear tarea"), hint: t("Issue/Epic + MR desde local"), run: () => enterLocal("crear") });
+  if (isGitlab()) entries.push({ label: t("Trabajo local: Vincular tarea"), hint: t("vincular local a una tarea existente"), run: () => enterLocal("vincular") });
+  if (isGitlab()) entries.push({ label: t("Trabajo local: Histórico"), hint: t("trabajos creados desde Monstro"), run: () => enterLocal("historico") });
+  for (const [bucket, label] of [["open", t("Abiertas")], ["mine", t("Mías")], ["review", t("Para revisar")], ["draft", t("Borradores")], ["merged", t("Fusionadas")], ["closed", t("Cerradas")]]) {
+    entries.push({ label: t("Ir a: {label}", { label }), hint: t("bucket"), run: () => switchBucket(bucket) });
   }
   if ((state.config?.repos || []).length > 1) {
-    entries.push({ label: "Repo: ⭐ Todos los repos", hint: "vista agregada", run: () => switchRepo(ALL_REPOS) });
+    entries.push({ label: t("Repo: ⭐ Todos los repos"), hint: t("vista agregada"), run: () => switchRepo(ALL_REPOS) });
   }
   for (const repo of state.config?.repos || []) {
-    entries.push({ label: `Repo: ${repo}`, hint: "cambiar repositorio", run: () => switchRepo(repo) });
+    entries.push({ label: t("Repo: {repo}", { repo }), hint: t("cambiar repositorio"), run: () => switchRepo(repo) });
   }
-  entries.push({ label: "Refrescar", hint: "R", run: refresh });
-  entries.push({ label: "Ajustes", hint: "⚙", run: openSettings });
+  entries.push({ label: t("Refrescar"), hint: "R", run: refresh });
+  entries.push({ label: t("Ajustes"), hint: "⚙", run: openSettings });
   return entries;
 }
 
@@ -424,7 +427,7 @@ function openPalette() {
   root.innerHTML = `
     <div class="modal-backdrop" id="palette-backdrop">
       <div class="palette">
-        <input type="text" id="palette-input" placeholder="Busca PRs, repos o acciones…  (Esc para cerrar)" autocomplete="off" />
+        <input type="text" id="palette-input" placeholder="${esc(t("Busca PRs, repos o acciones…  (Esc para cerrar)"))}" autocomplete="off" />
         <div id="palette-results"></div>
       </div>
     </div>`;
@@ -441,7 +444,7 @@ function openPalette() {
           <span>${esc(e.label)}</span><span class="muted">${esc(e.hint)}</span>
         </div>`,
       )
-      .join("") || `<div class="palette-item muted">Sin resultados</div>`;
+      .join("") || `<div class="palette-item muted">${esc(t("Sin resultados"))}</div>`;
     resultsBox.querySelectorAll(".palette-item[data-i]").forEach((el) =>
       el.addEventListener("click", () => {
         root.innerHTML = "";
@@ -480,22 +483,22 @@ function moveCursor(delta) {
 function openCheatsheet() {
   const root = $("#modal-root");
   const rows = [
-    ["⌘K", "Paleta de comandos (PRs, repos, acciones)"],
-    ["j / k", "Moverse por la lista"],
-    ["Enter", "Abrir la PR seleccionada"],
-    ["1 – 6", "Abiertas · Mías · Para revisar · Borradores · Fusionadas · Cerradas"],
-    ["h", "Histórico (grafo de ramas)"],
-    ["m", "Milestones (tareas por persona · GitLab)"],
-    ["r", "Refrescar"],
-    ["Esc", "Cerrar el panel"],
-    ["?", "Esta chuleta"],
+    ["⌘K", t("Paleta de comandos (PRs, repos, acciones)")],
+    ["j / k", t("Moverse por la lista")],
+    ["Enter", t("Abrir la PR seleccionada")],
+    ["1 – 6", t("Abiertas · Mías · Para revisar · Borradores · Fusionadas · Cerradas")],
+    ["h", t("Histórico (grafo de ramas)")],
+    ["m", t("Milestones (tareas por persona · GitLab)")],
+    ["r", t("Refrescar")],
+    ["Esc", t("Cerrar el panel")],
+    ["?", t("Esta chuleta")],
   ];
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal">
-        <h3>⌨️ Atajos de teclado</h3>
-        <table class="cheatsheet">${rows.map(([key, what]) => `<tr><td><kbd>${key}</kbd></td><td>${what}</td></tr>`).join("")}</table>
-        <div class="modal-actions"><button class="btn" id="modal-cancel">Cerrar</button></div>
+        <h3>⌨️ ${esc(t("Atajos de teclado"))}</h3>
+        <table class="cheatsheet">${rows.map(([key, what]) => `<tr><td><kbd>${key}</kbd></td><td>${esc(what)}</td></tr>`).join("")}</table>
+        <div class="modal-actions"><button class="btn" id="modal-cancel">${esc(t("Cerrar"))}</button></div>
       </div>
     </div>`;
   $("#modal-cancel").addEventListener("click", () => (root.innerHTML = ""));

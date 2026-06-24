@@ -3,7 +3,7 @@
 function renderChangesTab() {
   const files = state.files;
   if (!files) {
-    $("#tab-body").innerHTML = `<div class="loading">Cargando diff…</div>`;
+    $("#tab-body").innerHTML = `<div class="loading">${t("Cargando diff…")}</div>`;
     window.monstro.prFiles(detailRepo(), state.detailPR.number).then((loaded) => {
       state.files = loaded;
       if (state.detailTab === "changes") renderChangesTab();
@@ -39,8 +39,8 @@ function renderChangesTab() {
       <button class="file-nav-row" data-target="diff-f${fi}" title="${esc(file.filename)}">
         <span class="status-ico">${statusIcon[file.status] || "⚪"}</span>
         <span class="file-nav-name">${esc(file.filename)}</span>
-        ${comments ? `<span class="file-nav-badge badge-comments ${unresolved ? "" : "all-resolved"}" title="${unresolved ? `${unresolved} comentario(s) sin resolver` : "Todos los hilos resueltos"}">💬 ${comments}</span>` : ""}
-        ${draftCount ? `<span class="file-nav-badge badge-drafts" title="${draftCount} borrador(es) local(es)">📝 ${draftCount}</span>` : ""}
+        ${comments ? `<span class="file-nav-badge badge-comments ${unresolved ? "" : "all-resolved"}" title="${unresolved ? t("{n} comentario(s) sin resolver", { n: unresolved }) : t("Todos los hilos resueltos")}">💬 ${comments}</span>` : ""}
+        ${draftCount ? `<span class="file-nav-badge badge-drafts" title="${t("{n} borrador(es) local(es)", { n: draftCount })}">📝 ${draftCount}</span>` : ""}
       </button>`;
     })
     .join("");
@@ -48,7 +48,7 @@ function renderChangesTab() {
   $("#tab-body").innerHTML = `
     <div class="changes-layout">
       <nav class="file-nav">
-        <div class="file-nav-h">Ficheros (${files.length}) ·
+        <div class="file-nav-h">${t("Ficheros")} (${files.length}) ·
           <span class="checks-success">+${files.reduce((s, f) => s + f.additions, 0)}</span>/<span class="checks-failure">−${files.reduce((s, f) => s + f.deletions, 0)}</span>
         </div>
         ${navRows}
@@ -68,8 +68,8 @@ function renderChangesTab() {
           </summary>
           ${file.patch
             ? `<table class="diff-table">${parsePatch(file.patch).map((l) => diffLineRow(file, l, anchored)).join("")}</table>`
-            : `<p class="muted" style="padding:10px 14px">Sin diff disponible (binario o demasiado grande).</p>`}
-          ${orphanThreads ? `<div class="orphan-threads"><div class="section-h">Hilos en versiones anteriores</div>${orphanThreads}</div>` : ""}
+            : `<p class="muted" style="padding:10px 14px">${t("Sin diff disponible (binario o demasiado grande).")}</p>`}
+          ${orphanThreads ? `<div class="orphan-threads"><div class="section-h">${t("Hilos en versiones anteriores")}</div>${orphanThreads}</div>` : ""}
         </details>`;
       })
       .join("")}
@@ -105,11 +105,11 @@ function renderChangesTab() {
       btn.disabled = true;
       try {
         await window.monstro.replyThread(detailRepo(), state.detailPR.number, Number(btn.dataset.reply), body);
-        toast("Respuesta publicada", "ok");
+        toast(t("Respuesta publicada"), "ok");
         state.conversation = await window.monstro.prConversation(detailRepo(), state.detailPR.number);
         renderChangesTab();
       } catch (err) {
-        toast(`No se pudo responder: ${String(err.message || err)}`, "err");
+        toast(t("No se pudo responder: {err}", { err: String(err.message || err) }), "err");
         btn.disabled = false;
       }
     }),
@@ -121,11 +121,11 @@ function renderChangesTab() {
       btn.disabled = true;
       try {
         await window.monstro.resolveThread(btn.dataset.resolveId, resolved);
-        toast(resolved ? "Conversación resuelta ✓" : "Conversación reabierta", "ok");
+        toast(resolved ? t("Conversación resuelta ✓") : t("Conversación reabierta"), "ok");
         state.conversation = await window.monstro.prConversation(detailRepo(), state.detailPR.number);
         renderChangesTab();
       } catch (err) {
-        toast(`No se pudo ${resolved ? "resolver" : "reabrir"}: ${String(err.message || err)}`, "err");
+        toast(t("No se pudo {action}: {err}", { action: resolved ? t("resolver") : t("reabrir"), err: String(err.message || err) }), "err");
         btn.disabled = false;
       }
     }),
@@ -144,11 +144,11 @@ function openInlineComposer(tr) {
   row.innerHTML = `
     <td colspan="3">
       <div class="composer inline">
-        <div class="muted" style="margin-bottom:6px">📝 Borrador en <code>${esc(path)}</code> línea ${esc(line)} (${side === "LEFT" ? "versión anterior" : "versión nueva"}) — no se publica hasta que tú lo digas</div>
-        <textarea rows="3" placeholder="Tu comentario…"></textarea>
+        <div class="muted" style="margin-bottom:6px">📝 ${t("Borrador en")} <code>${esc(path)}</code> ${t("línea")} ${esc(line)} (${side === "LEFT" ? t("versión anterior") : t("versión nueva")}) — ${t("no se publica hasta que tú lo digas")}</div>
+        <textarea rows="3" placeholder="${t("Tu comentario…")}"></textarea>
         <div class="composer-actions">
-          <button class="btn cancel">Cancelar</button>
-          <button class="btn btn-accent send">📝 Guardar borrador</button>
+          <button class="btn cancel">${t("Cancelar")}</button>
+          <button class="btn btn-accent send">📝 ${t("Guardar borrador")}</button>
         </div>
       </div>
     </td>`;
