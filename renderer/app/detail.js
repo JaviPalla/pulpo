@@ -9,7 +9,7 @@ async function openDetail(number, tab = "conv", repoOverride = null) {
   renderList();
   detailPane.classList.remove("hidden");
   detailPane.classList.toggle("wide", tab === "changes");
-  detailContent.innerHTML = `<div class="detail-inner"><div class="loading">Cargando #${number}…</div></div>`;
+  detailContent.innerHTML = `<div class="detail-inner"><div class="loading">${t("Cargando #{n}…", { n: number })}</div></div>`;
   try {
     const [pr, conversation, drafts] = await Promise.all([
       window.monstro.prDetail(detailRepo(), number),
@@ -41,7 +41,7 @@ function renderDetail() {
 
   detailContent.innerHTML = `
     <div class="detail-inner ${state.detailTab === "changes" ? "detail-full" : ""}">
-      <button class="detail-close" id="detail-close" title="Cerrar (Esc)">✕</button>
+      <button class="detail-close" id="detail-close" title="${t("Cerrar (Esc)")}">✕</button>
       <div class="detail-title">${esc(pr.title)} <span class="pr-number">#${pr.number}</span></div>
       <div class="detail-sub">
         ${stateChip(pr)} ${reviewChip(pr)} ${mergeStateChip(pr)}
@@ -52,35 +52,35 @@ function renderDetail() {
 
       <div class="actions">
         <button class="btn btn-accent" id="act-update" ${pr.state !== "OPEN" ? "disabled" : ""}
-                title="Actualiza la rama con la base usando rebase">⤴ Update branch (rebase)</button>
+                title="${t("Actualiza la rama con la base usando rebase")}">⤴ ${t("Update branch (rebase)")}</button>
         <button class="btn btn-primary" id="act-merge" ${canMerge(pr) ? "" : "disabled"}
-                title="${esc(blockReason || "Merge con merge commit")}">⇅ Merge (merge commit)</button>
+                title="${esc(blockReason || t("Merge con merge commit"))}">⇅ ${t("Merge (merge commit)")}</button>
         ${state.aiGenerating === pr.number
-          ? `<button class="btn btn-ai" id="act-ai" disabled><span class="spinner"></span> Generando review…</button>`
+          ? `<button class="btn btn-ai" id="act-ai" disabled><span class="spinner"></span> ${t("Generando review…")}</button>`
           : `<button class="btn btn-ai" id="act-ai" ${pr.state === "OPEN" ? "" : "disabled"}
-                title="Genera comentarios de review (en inglés) como borradores: nada se publica hasta que tú lo digas">🤖 Review con IA</button>`}
+                title="${t("Genera comentarios de review (en inglés) como borradores: nada se publica hasta que tú lo digas")}">🤖 ${t("Review con IA")}</button>`}
         ${myApprovedReview(pr) && pr.state === "OPEN"
           ? `<button class="btn" id="act-unapprove"
-                title="Descarta tu review aprobada (GitHub lo registra en la PR con el motivo)">↩︎ Quitar aprobación</button>`
+                title="${t("Descarta tu review aprobada (GitHub lo registra en la PR con el motivo)")}">↩︎ ${t("Quitar aprobación")}</button>`
           : `<button class="btn" id="act-approve" ${pr.state === "OPEN" && pr.author?.login !== state.me?.login ? "" : "disabled"}
-                title="${pr.author?.login === state.me?.login ? "No puedes aprobar tu propia PR" : "Aprobar sin comentarios (pide confirmación)"}">✅ Aprobar</button>`}
+                title="${pr.author?.login === state.me?.login ? t("No puedes aprobar tu propia PR") : t("Aprobar sin comentarios (pide confirmación)")}">✅ ${t("Aprobar")}</button>`}
         ${pr.state === "OPEN" && pr.author?.login === state.me?.login
-          ? `<button class="btn" id="act-draft-toggle" title="${pr.isDraft ? "Marca la PR como lista: notifica a los reviewers" : "Convierte la PR en borrador: deja de pedir reviews"}">${pr.isDraft ? "🚀 Marcar lista para review" : "↩︎ Convertir a borrador"}</button>`
+          ? `<button class="btn" id="act-draft-toggle" title="${pr.isDraft ? t("Marca la PR como lista: notifica a los reviewers") : t("Convierte la PR en borrador: deja de pedir reviews")}">${pr.isDraft ? `🚀 ${t("Marcar lista para review")}` : `↩︎ ${t("Convertir a borrador")}`}</button>`
           : ""}
       </div>
       <div class="copy-row">
-        <button class="mini-btn" id="copy-branch" title="Copiar nombre de la rama">📋 ${esc(pr.headRefName)}</button>
-        <button class="mini-btn" id="copy-checkout" title="Copiar comando para traerte la PR en local">⬇ gh pr checkout ${pr.number}</button>
-        <button class="mini-btn" id="copy-url" title="Copiar URL de la PR">🔗 URL</button>
+        <button class="mini-btn" id="copy-branch" title="${t("Copiar nombre de la rama")}">📋 ${esc(pr.headRefName)}</button>
+        <button class="mini-btn" id="copy-checkout" title="${t("Copiar comando para traerte la PR en local")}">⬇ gh pr checkout ${pr.number}</button>
+        <button class="mini-btn" id="copy-url" title="${t("Copiar URL de la PR")}">🔗 URL</button>
       </div>
       ${blockReason && pr.state === "OPEN" ? `<p class="muted">⚠️ ${esc(blockReason)}</p>` : ""}
 
       <div class="tabs">
         <button class="tab ${state.detailTab === "conv" ? "active" : ""}" data-tab="conv">
-          Conversación <span class="count">${pr.comments?.totalCount ?? 0}</span>
+          ${t("Conversación")} <span class="count">${pr.comments?.totalCount ?? 0}</span>
         </button>
         <button class="tab ${state.detailTab === "changes" ? "active" : ""}" data-tab="changes">
-          Cambios <span class="count">${pr.changedFiles} ficheros · ${threadCount} hilos${state.drafts.filter((d) => d.kind === "inline").length ? ` · 📝 ${state.drafts.filter((d) => d.kind === "inline").length}` : ""}</span>
+          ${t("Cambios")} <span class="count">${t("{n} ficheros", { n: pr.changedFiles })} · ${t("{n} hilos", { n: threadCount })}${state.drafts.filter((d) => d.kind === "inline").length ? ` · 📝 ${state.drafts.filter((d) => d.kind === "inline").length}` : ""}</span>
         </button>
       </div>
 
@@ -99,11 +99,11 @@ function renderDetail() {
     btn.disabled = true;
     try {
       const result = await window.monstro.setPrDraft(pr.id, !pr.isDraft);
-      toast(result.isDraft ? `#${pr.number} convertida a borrador` : `#${pr.number} lista para review 🚀`, "ok");
+      toast(result.isDraft ? t("#{n} convertida a borrador", { n: pr.number }) : t("#{n} lista para review 🚀", { n: pr.number }), "ok");
       await refresh();
       openDetail(pr.number, state.detailTab);
     } catch (err) {
-      toast(`No se pudo cambiar el estado: ${String(err.message || err)}`, "err");
+      toast(t("No se pudo cambiar el estado: {e}", { e: String(err.message || err) }), "err");
       btn.disabled = false;
     }
   });
@@ -152,21 +152,21 @@ function renderConversationTab() {
   const longDescription = (pr.bodyHTML || "").length > 1500;
   $("#tab-body").innerHTML = `
     ${generalDrafts.length || inlineDraftCount
-      ? `<div class="section-h">Tus borradores (${state.drafts.length})</div>
+      ? `<div class="section-h">${t("Tus borradores ({n})", { n: state.drafts.length })}</div>
          ${generalDrafts.map(draftCard).join("")}
-         ${inlineDraftCount ? `<p class="muted">…y ${inlineDraftCount} en línea en la pestaña <a href="#" id="goto-changes">Cambios</a>.</p>` : ""}`
+         ${inlineDraftCount ? `<p class="muted">${t("…y {n} en línea en la pestaña", { n: inlineDraftCount })} <a href="#" id="goto-changes">${t("Cambios")}</a>.</p>` : ""}`
       : ""}
-    <div class="section-h">Comentarios (${comments.length})</div>
-    ${comments.map(commentBlock).join("") || `<p class="muted">Nadie ha dicho nada todavía.</p>`}
+    <div class="section-h">${t("Comentarios ({n})", { n: comments.length })}</div>
+    ${comments.map(commentBlock).join("") || `<p class="muted">${t("Nadie ha dicho nada todavía.")}</p>`}
     <div class="composer">
-      <textarea id="new-comment" rows="3" placeholder="Escribe un comentario… se guarda como borrador hasta que publiques"></textarea>
+      <textarea id="new-comment" rows="3" placeholder="${t("Escribe un comentario… se guarda como borrador hasta que publiques")}"></textarea>
       <div class="composer-actions">
-        <button class="btn btn-accent" id="send-comment">📝 Guardar borrador</button>
+        <button class="btn btn-accent" id="send-comment">📝 ${t("Guardar borrador")}</button>
       </div>
     </div>
     <details class="desc-fold" ${longDescription ? "" : "open"}>
-      <summary class="section-h">Descripción${longDescription ? " (clic para desplegar)" : ""}</summary>
-      <div class="pr-body">${pr.bodyHTML || "<p class='muted'>Sin descripción.</p>"}</div>
+      <summary class="section-h">${t("Descripción")}${longDescription ? ` ${t("(clic para desplegar)")}` : ""}</summary>
+      <div class="pr-body">${pr.bodyHTML || `<p class='muted'>${t("Sin descripción.")}</p>`}</div>
     </details>`;
   $("#goto-changes")?.addEventListener("click", (event) => {
     event.preventDefault();
@@ -227,15 +227,15 @@ function threadBlock(thread) {
   const resolveBtn = !thread.id
     ? ""
     : thread.isResolved
-      ? (thread.viewerCanUnresolve ? `<button class="btn thread-resolve" data-resolve-id="${esc(thread.id)}" data-resolved="false" title="Reabre la conversación en GitHub">↺ Reabrir</button>` : "")
-      : (thread.viewerCanResolve ? `<button class="btn thread-resolve resolve-ok" data-resolve-id="${esc(thread.id)}" data-resolved="true" title="Marca la conversación como resuelta en GitHub">✓ Resolver</button>` : "");
+      ? (thread.viewerCanUnresolve ? `<button class="btn thread-resolve" data-resolve-id="${esc(thread.id)}" data-resolved="false" title="${t("Reabre la conversación en GitHub")}">↺ ${t("Reabrir")}</button>` : "")
+      : (thread.viewerCanResolve ? `<button class="btn thread-resolve resolve-ok" data-resolve-id="${esc(thread.id)}" data-resolved="true" title="${t("Marca la conversación como resuelta en GitHub")}">✓ ${t("Resolver")}</button>` : "");
   return `
     <div class="thread ${thread.isResolved ? "resolved" : ""}">
-      ${thread.isResolved ? `<div class="thread-tag">✓ Resuelto</div>` : ""}
+      ${thread.isResolved ? `<div class="thread-tag">✓ ${t("Resuelto")}</div>` : ""}
       ${comments.map(commentBlock).join("")}
       <div class="thread-reply">
-        <textarea rows="2" placeholder="Responder…"></textarea>
-        <button class="btn" data-reply="${first?.databaseId ?? ""}">Responder</button>
+        <textarea rows="2" placeholder="${t("Responder…")}"></textarea>
+        <button class="btn" data-reply="${first?.databaseId ?? ""}">${t("Responder")}</button>
         ${resolveBtn}
       </div>
     </div>`;
@@ -267,7 +267,7 @@ function diffLineRow(file, line, anchored) {
   return `
     <tr class="diff-line ${cls}" data-path="${esc(file.filename)}" data-line="${commentLine ?? ""}" data-side="${side}">
       <td class="gutter">${line.old ?? ""}</td>
-      <td class="gutter">${line.new ?? ""}<button class="add-comment" title="Comentar esta línea (borrador)">+</button></td>
+      <td class="gutter">${line.new ?? ""}<button class="add-comment" title="${t("Comentar esta línea (borrador)")}">+</button></td>
       <td class="code"><span class="sign">${sign}</span>${codeHtml}</td>
     </tr>${threadsHtml}${draftsHtml}`;
 }

@@ -52,6 +52,8 @@ function createWindow() {
       selftest: SELFTEST ? "1" : "0",
       selftest_route: SELFTEST_ROUTE,
       seed_draft: process.argv.includes("--seed-draft") ? "1" : "0",
+      // Override de idioma para previsualizar/capturar la UI en otro idioma (--lang=en).
+      lang: (process.argv.find((a) => a.startsWith("--lang=")) || "").split("=")[1] || "",
     },
   });
 
@@ -141,7 +143,9 @@ function wireIpc() {
 
   ipcMain.handle("config:get", () => {
     const { token, ...rest } = config.load();
-    return { ...rest, hasManualToken: Boolean(token) };
+    // systemLocale = idioma del SO (BCP-47, p.ej. "es-ES"); el renderer lo usa como
+    // idioma por defecto cuando config.language es null.
+    return { ...rest, hasManualToken: Boolean(token), systemLocale: app.getLocale() };
   });
 
   ipcMain.handle("config:set", (_event, partial) => {
@@ -154,6 +158,7 @@ function wireIpc() {
     if (Number.isInteger(partial.pollSeconds) && partial.pollSeconds >= 15) allowed.pollSeconds = partial.pollSeconds;
     if (["one-dark", "dracula", "github-light"].includes(partial.theme)) allowed.theme = partial.theme;
     if (["default", "liquid-glass"].includes(partial.uiTheme)) allowed.uiTheme = partial.uiTheme;
+    if (partial.language === "es" || partial.language === "en" || partial.language === null) allowed.language = partial.language;
     if (partial.provider === "github" || partial.provider === "gitlab") {
       allowed.provider = partial.provider;
       // Cambiar de proveedor invalida el token: era de otro sitio.

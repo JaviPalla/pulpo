@@ -28,17 +28,17 @@ function detectAndNotify(openPrs) {
   for (const [number, now] of snapshot) {
     const before = previous.get(number);
     if (now.reviewMe && !(before?.reviewMe)) {
-      window.monstro.notify(`Te piden review · #${number}`, now.title);
+      window.monstro.notify(t("Te piden review · #{number}", { number }), now.title);
     }
     if (!before || !now.mine) continue;
     if (now.reviewDecision === "APPROVED" && before.reviewDecision !== "APPROVED") {
-      window.monstro.notify(`✅ Aprobada · #${number}`, now.title);
+      window.monstro.notify(t("✅ Aprobada · #{number}", { number }), now.title);
     }
     if (now.reviewDecision === "CHANGES_REQUESTED" && before.reviewDecision !== "CHANGES_REQUESTED") {
-      window.monstro.notify(`± Cambios pedidos · #${number}`, now.title);
+      window.monstro.notify(t("± Cambios pedidos · #{number}", { number }), now.title);
     }
     if (["FAILURE", "ERROR"].includes(now.checks) && !["FAILURE", "ERROR"].includes(before.checks)) {
-      window.monstro.notify(`✗ Checks en rojo · #${number}`, now.title);
+      window.monstro.notify(t("✗ Checks en rojo · #{number}", { number }), now.title);
     }
   }
 }
@@ -77,7 +77,7 @@ async function refresh() {
     refreshOpenDetailSilently();
   } catch (err) {
     state.loading = false;
-    list.innerHTML = `<div class="error-box">No pude cargar ${esc(state.repo)}:<br>${esc(String(err.message || err))}</div>`;
+    list.innerHTML = `<div class="error-box">${t("No pude cargar {repo}", { repo: esc(state.repo) })}:<br>${esc(String(err.message || err))}</div>`;
     notifySelftestOnce();
   }
 }

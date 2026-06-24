@@ -2,7 +2,7 @@
 
 async function enterMilestones() {
   if (!isGitlab()) {
-    toast("La vista de Milestones solo está disponible en GitLab", "");
+    toast(t("La vista de Milestones solo está disponible en GitLab"), "");
     return;
   }
   state.view = "milestones";
@@ -60,7 +60,7 @@ function groupIssuesByAssignee(issues) {
   const UNASSIGNED = "__unassigned__";
   const groups = new Map();
   for (const iss of issues) {
-    const targets = iss.assignees.length ? iss.assignees : [{ username: UNASSIGNED, name: "Sin asignar", avatarUrl: null }];
+    const targets = iss.assignees.length ? iss.assignees : [{ username: UNASSIGNED, name: t("Sin asignar"), avatarUrl: null }];
     for (const a of targets) {
       if (!groups.has(a.username)) groups.set(a.username, { ...a, issues: [] });
       groups.get(a.username).issues.push(iss);
@@ -92,8 +92,8 @@ function milestoneCard(iss, statusSet) {
     <div class="ms-task ${iss.state === "closed" ? "closed" : ""} ${selected ? "selected" : ""}" draggable="true"
          data-key="${esc(key)}" data-project="${iss.projectId}" data-iid="${iss.iid}">
       <div class="ms-task-top">
-        <input type="checkbox" class="ms-task-check" ${selected ? "checked" : ""} title="Seleccionar" />
-        <button class="ms-task-title" data-url="${esc(iss.webUrl)}" title="Abrir en GitLab">
+        <input type="checkbox" class="ms-task-check" ${selected ? "checked" : ""} title="${t("Seleccionar")}" />
+        <button class="ms-task-title" data-url="${esc(iss.webUrl)}" title="${t("Abrir en GitLab")}">
           ${esc(iss.title)} <span class="ms-iid">#${iss.iid}</span>
         </button>
       </div>
@@ -136,22 +136,22 @@ function milestoneMetrics(issues, pendingCheckSet, finishedSet) {
 // Info del filtro de estado: explica los tres estados (sin filtro → solo estas → ocultas) con
 // una animación que va resaltando cada uno en orden, mostrando el ciclo del clic.
 function statusFilterHelp() {
-  return `<span class="ms-filter-info" tabindex="0" title="Cómo funciona el filtro de etiquetas"><span class="ms-filter-i">i</span><div class="ms-filter-pop">
-      <div class="msfh-title">Clic en una etiqueta para ciclar el filtro:</div>
+  return `<span class="ms-filter-info" tabindex="0" title="${t("Cómo funciona el filtro de etiquetas")}"><span class="ms-filter-i">i</span><div class="ms-filter-pop">
+      <div class="msfh-title">${t("Clic en una etiqueta para ciclar el filtro:")}</div>
       <div class="msfh-states">
         <span class="msfh-state st1">
-          <span class="msfh-chip neutral"><span class="lbl">etiqueta</span></span>
-          <span class="msfh-cap">Sin filtro</span>
+          <span class="msfh-chip neutral"><span class="lbl">${t("etiqueta")}</span></span>
+          <span class="msfh-cap">${t("Sin filtro")}</span>
         </span>
         <span class="msfh-arr">→</span>
         <span class="msfh-state st2">
-          <span class="msfh-chip inc"><span class="chk">✓</span> <span class="lbl">etiqueta</span></span>
-          <span class="msfh-cap">Solo estas</span>
+          <span class="msfh-chip inc"><span class="chk">✓</span> <span class="lbl">${t("etiqueta")}</span></span>
+          <span class="msfh-cap">${t("Solo estas")}</span>
         </span>
         <span class="msfh-arr">→</span>
         <span class="msfh-state st3">
-          <span class="msfh-chip exc"><span class="ex">✕</span> <span class="lbl">etiqueta</span></span>
-          <span class="msfh-cap">Ocultas</span>
+          <span class="msfh-chip exc"><span class="ex">✕</span> <span class="lbl">${t("etiqueta")}</span></span>
+          <span class="msfh-cap">${t("Ocultas")}</span>
         </span>
       </div>
     </div></span>`;
@@ -175,8 +175,8 @@ function metricChips(mm, showCount = false) {
     return `<span class="ms-chip ${cls}" title="${name} ${count}/${total}">${icon} ${num}${pct}%</span>`;
   };
   return (
-    chip("term", "✓", mm.doneCount, mm.doneTotal, mm.donePct, "Terminadas") +
-    chip("check", "◉", mm.checkedCount, mm.checkedTotal, mm.checkedPct, "Comprobadas")
+    chip("term", "✓", mm.doneCount, mm.doneTotal, mm.donePct, t("Terminadas")) +
+    chip("check", "◉", mm.checkedCount, mm.checkedTotal, mm.checkedPct, t("Comprobadas"))
   );
 }
 
@@ -184,7 +184,7 @@ function renderMilestones() {
   if (state.view !== "milestones") return;
   const m = state.milestones;
   if (m.loading) {
-    list.innerHTML = `<div class="loading">Cargando milestone…</div>`;
+    list.innerHTML = `<div class="loading">${t("Cargando milestone…")}</div>`;
     return;
   }
 
@@ -233,7 +233,7 @@ function renderMilestones() {
           ? `background:${color};color:${readableText(lab?.color)};border-color:${color}`
           : `background:transparent;color:var(--text);border-color:${color}`;
       const icon = mode === "include" ? `<span class="chk">✓</span> ` : mode === "exclude" ? `<span class="ex">✕</span> ` : "";
-      const hint = mode === "include" ? "Solo estas · clic: ocultar" : mode === "exclude" ? "Ocultas · clic: quitar filtro" : "Clic: solo estas";
+      const hint = mode === "include" ? t("Solo estas · clic: ocultar") : mode === "exclude" ? t("Ocultas · clic: quitar filtro") : t("Clic: solo estas");
       return `<button class="ms-status-chip ${cls}" data-label="${esc(label)}" style="${style}" title="${hint}">${icon}<span class="lbl">${esc(label)}</span></button>`;
     })
     .join("");
@@ -255,7 +255,7 @@ function renderMilestones() {
         </section>`;
         })
         .join("")
-    : `<div class="empty">No hay tareas que mostrar con estos filtros.</div>`;
+    : `<div class="empty">${t("No hay tareas que mostrar con estos filtros.")}</div>`;
 
   // Solo seguimos contando como seleccionadas las que siguen visibles.
   const visibleKeys = new Set(visible.map(issueKey));
@@ -267,8 +267,8 @@ function renderMilestones() {
       const current = ms.title === m.selectedTitle;
       // Los chips de métricas (genéricos del milestone) van bajo el nombre, solo en el actual.
       const metrics = current ? `<span class="ms-rail-metrics">${metricChips(milestoneMM, true)}</span>` : "";
-      const due = ms.dueDate ? `<span class="ms-rail-due">vence ${esc(ms.dueDate)}</span>` : "";
-      return `<button class="ms-rail-item ms-drop-ms ${current ? "current" : ""}" data-msid="${ms.id}" data-title="${esc(ms.title)}" title="Clic: ver este milestone · soltar issues aquí para moverlas">
+      const due = ms.dueDate ? `<span class="ms-rail-due">${t("vence")} ${esc(ms.dueDate)}</span>` : "";
+      return `<button class="ms-rail-item ms-drop-ms ${current ? "current" : ""}" data-msid="${ms.id}" data-title="${esc(ms.title)}" title="${t("Clic: ver este milestone · soltar issues aquí para moverlas")}">
         <span class="ms-rail-name">${esc(ms.title)}</span>
         ${metrics || due ? `<span class="ms-rail-sub">${metrics}${due}</span>` : ""}
       </button>`;
@@ -279,8 +279,8 @@ function renderMilestones() {
   const tab = m.tab === "summary" ? "summary" : "tasks";
   const tabsHtml = `
     <div class="ms-tabs">
-      <button class="ms-tab ${tab === "tasks" ? "active" : ""}" data-mstab="tasks">Tareas</button>
-      <button class="ms-tab ${tab === "summary" ? "active" : ""}" data-mstab="summary">Resumen</button>
+      <button class="ms-tab ${tab === "tasks" ? "active" : ""}" data-mstab="tasks">${t("Tareas")}</button>
+      <button class="ms-tab ${tab === "summary" ? "active" : ""}" data-mstab="summary">${t("Resumen")}</button>
     </div>`;
 
   const tasksBodyHtml = `
@@ -288,22 +288,22 @@ function renderMilestones() {
       ${statusFilterHelp()}
       ${statusChips ? `<div class="ms-status-bar">${statusChips}</div>` : ""}
       <div class="ms-toggles">
-        <label class="ms-closed-toggle"><input type="checkbox" id="ms-show-closed" ${m.filters.showClosed ? "checked" : ""} /> Mostrar cerradas</label>
-        <label class="ms-closed-toggle"><input type="checkbox" id="ms-show-unassigned" ${m.filters.showUnassigned ? "checked" : ""} /> Mostrar sin asignar</label>
-        <span class="ms-counter">${visible.length} tarea${visible.length === 1 ? "" : "s"}</span>
-        <button class="icon-btn" id="ms-refresh" title="Recargar">⟳</button>
+        <label class="ms-closed-toggle"><input type="checkbox" id="ms-show-closed" ${m.filters.showClosed ? "checked" : ""} /> ${t("Mostrar cerradas")}</label>
+        <label class="ms-closed-toggle"><input type="checkbox" id="ms-show-unassigned" ${m.filters.showUnassigned ? "checked" : ""} /> ${t("Mostrar sin asignar")}</label>
+        <span class="ms-counter">${visible.length === 1 ? t("{n} tarea", { n: visible.length }) : t("{n} tareas", { n: visible.length })}</span>
+        <button class="icon-btn" id="ms-refresh" title="${t("Recargar")}">⟳</button>
       </div>
     </div>
     <div class="ms-bulk-bar ${selCount ? "" : "hidden"}">
-      <span class="ms-bulk-count">${selCount} seleccionada${selCount === 1 ? "" : "s"}</span>
-      <button class="btn" id="ms-bulk-labels">Etiquetas…</button>
-      <button class="btn" id="ms-bulk-milestone">Milestone…</button>
-      <button class="btn ghost" id="ms-bulk-clear">Quitar selección</button>
+      <span class="ms-bulk-count">${selCount === 1 ? t("{n} seleccionada", { n: selCount }) : t("{n} seleccionadas", { n: selCount })}</span>
+      <button class="btn" id="ms-bulk-labels">${t("Etiquetas…")}</button>
+      <button class="btn" id="ms-bulk-milestone">${t("Milestone…")}</button>
+      <button class="btn ghost" id="ms-bulk-clear">${t("Quitar selección")}</button>
     </div>
     <div class="ms-board">${boardHtml}</div>`;
 
   list.innerHTML = `
-    <div class="ms-rail">${railHtml || `<span class="muted">Sin milestones activos</span>`}</div>
+    <div class="ms-rail">${railHtml || `<span class="muted">${t("Sin milestones activos")}</span>`}</div>
     ${tabsHtml}
     ${tab === "summary" ? milestoneSummaryHtml() : tasksBodyHtml}`;
 
@@ -407,8 +407,8 @@ async function applyIssuePatch(keys, patchOrFn) {
   m.selected.clear();
   m.issues = []; // fuerza refetch de las tareas del milestone actual
   await loadMilestones();
-  if (fail) toast(`${ok} aplicada${ok === 1 ? "" : "s"}, ${fail} fallaron`, "err");
-  else if (ok) toast(`${ok} tarea${ok === 1 ? "" : "s"} actualizada${ok === 1 ? "" : "s"}`, "ok");
+  if (fail) toast(ok === 1 ? t("{ok} aplicada, {fail} fallaron", { ok, fail }) : t("{ok} aplicadas, {fail} fallaron", { ok, fail }), "err");
+  else if (ok) toast(ok === 1 ? t("{ok} tarea actualizada", { ok }) : t("{ok} tareas actualizadas", { ok }), "ok");
 }
 
 /* ============ resumen de novedades (sub-pestaña Resumen, solo GitLab) ============ */

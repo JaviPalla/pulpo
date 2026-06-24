@@ -11,7 +11,7 @@ function calverBase(ref) {
 function pipelineDot(state) {
   const map = { SUCCESS: ["✓", "ok"], FAILURE: ["✗", "err"], ERROR: ["✗", "err"], PENDING: ["●", "pending"], EXPECTED: ["●", "pending"] };
   const [icon, cls] = map[state] || ["·", "muted"];
-  return `<span class="rel-pipe ${cls}" title="Pipeline: ${esc(state || "—")}">${icon}</span>`;
+  return `<span class="rel-pipe ${cls}" title="${t("Pipeline")}: ${esc(state || "—")}">${icon}</span>`;
 }
 
 function renderReleasePublish() {
@@ -41,7 +41,7 @@ function renderReleasePublish() {
     .map((proj) => {
       const off = !r.selected.has(proj.path);
       return `<button class="ms-proj-chip ${off ? "off" : ""}" data-path="${esc(proj.path)}" ${p.running ? "disabled" : ""}
-        title="${off ? "Excluido · clic para incluir" : "Incluido · clic para excluir"}">
+        title="${off ? t("Excluido · clic para incluir") : t("Incluido · clic para excluir")}">
         ${projectIconHtml(proj.path)}<span class="ms-proj-name">${esc(proj.name)}</span>
       </button>`;
     })
@@ -52,7 +52,7 @@ function renderReleasePublish() {
   const base = calverBase(p.ref);
   const canRun = refValid && selCount > 0 && !p.running;
 
-  const msOptions = [`<option value="">Sin milestone</option>`]
+  const msOptions = [`<option value="">${t("Sin milestone")}</option>`]
     .concat((p.milestonesList || []).map((m) => `<option value="${esc(m.title)}" ${p.milestone === m.title ? "selected" : ""}>${esc(m.title)}</option>`))
     .join("");
 
@@ -64,62 +64,62 @@ function renderReleasePublish() {
     const cls = fail ? (ok ? "warn" : "err") : "ok";
     const rowsHtml = p.results.results
       .map((res) => {
-        if (!res.ok) return `<div class="rel-res-row err" title="${esc(res.error || "")}">✕ ${esc(res.name)}: ${esc(res.error || "error")}</div>`;
+        if (!res.ok) return `<div class="rel-res-row err" title="${esc(res.error || "")}">✕ ${esc(res.name)}: ${esc(res.error || t("error"))}</div>`;
         const st = p.status.get(res.id);
-        const pipe = st?.pipeline ? pipelineDot(st.pipeline.state) : `<span class="rel-pipe muted" title="Sin pipeline">·</span>`;
+        const pipe = st?.pipeline ? pipelineDot(st.pipeline.state) : `<span class="rel-pipe muted" title="${t("Sin pipeline")}">·</span>`;
         const envs = (st?.environments || [])
           .map((e) => `<span class="rel-env ${e.state === "available" ? "up" : ""}">${esc(e.name)}</span>`)
           .join("");
         const link = st?.pipeline?.webUrl || res.releaseUrl;
         return `<div class="rel-res-row ok">
           ${pipe} ✓ ${esc(res.name)} <code>${esc(res.tag)}</code>
-          ${link ? `<a data-url="${esc(link)}" href="#">ver</a>` : ""}
+          ${link ? `<a data-url="${esc(link)}" href="#">${t("ver")}</a>` : ""}
           ${envs ? `<span class="rel-envs">${envs}</span>` : ""}
         </div>`;
       })
       .join("");
     resultsHtml = `
-      <div class="rel-summary ${cls}">Release <code>${esc(p.results.base)}.x</code> desde <code>${esc(p.results.ref)}</code> · ${ok} publicada${ok === 1 ? "" : "s"}${fail ? ` · ${fail} con error` : ""}</div>
+      <div class="rel-summary ${cls}">Release <code>${esc(p.results.base)}.x</code> ${t("desde")} <code>${esc(p.results.ref)}</code> · ${ok === 1 ? t("{n} publicada", { n: ok }) : t("{n} publicadas", { n: ok })}${fail ? ` · ${t("{n} con error", { n: fail })}` : ""}</div>
       <div class="rel-results">${rowsHtml}</div>`;
   }
 
   list.innerHTML = `
     <div class="rel-view">
       <header class="rel-head">
-        <h2>Publicar release</h2>
-        <p class="rel-sub">Crea el <b>tag + release</b> (en un solo paso) en los proyectos seleccionados, desde una rama <code>rb/…</code>. El tag es CalVer <code>AAAA.MM.patch</code>; el patch se autoincrementa por proyecto.</p>
+        <h2>${t("Publicar release")}</h2>
+        <p class="rel-sub">${t("Crea el <b>tag + release</b> (en un solo paso) en los proyectos seleccionados, desde una rama <code>rb/…</code>. El tag es CalVer <code>AAAA.MM.patch</code>; el patch se autoincrementa por proyecto.")}</p>
       </header>
 
       <div class="rel-form">
         <label class="rel-field">
-          <span class="rel-label">Rama de release</span>
+          <span class="rel-label">${t("Rama de release")}</span>
           <input type="text" id="rel-pub-ref" value="${esc(p.ref)}" placeholder="rb/${esc(suggestedReleaseVersion())}" ${p.running ? "disabled" : ""} autocomplete="off" />
         </label>
         <label class="rel-field">
-          <span class="rel-label">Milestone (opcional)</span>
+          <span class="rel-label">${t("Milestone (opcional)")}</span>
           <select id="rel-pub-milestone" class="modal-input" ${p.running || p.milestonesLoading ? "disabled" : ""}>${msOptions}</select>
         </label>
         <div class="rel-preview-box">
-          <span class="rel-label">Tag a crear</span>
+          <span class="rel-label">${t("Tag a crear")}</span>
           <code class="rel-branch-preview ${refValid ? "" : "invalid"}" id="rel-pub-preview">${esc(base)}.x</code>
         </div>
       </div>
 
       <label class="rel-field rel-field-full">
-        <span class="rel-label">Descripción (opcional)</span>
-        <textarea id="rel-pub-desc" class="modal-input" rows="3" ${p.running ? "disabled" : ""} placeholder="Notas de la release (Markdown). Vale para todos los proyectos.">${esc(p.description)}</textarea>
+        <span class="rel-label">${t("Descripción (opcional)")}</span>
+        <textarea id="rel-pub-desc" class="modal-input" rows="3" ${p.running ? "disabled" : ""} placeholder="${t("Notas de la release (Markdown). Vale para todos los proyectos.")}">${esc(p.description)}</textarea>
       </label>
 
       <div class="rel-projects-head">
-        <span>Proyectos <span class="rel-count" id="rel-pub-count">${selCount}/${projects.length}</span></span>
-        <button class="btn ghost" id="rel-pub-toggle-all" ${p.running ? "disabled" : ""}>${allOn ? "Ninguno" : "Todos"}</button>
+        <span>${t("Proyectos")} <span class="rel-count" id="rel-pub-count">${selCount}/${projects.length}</span></span>
+        <button class="btn ghost" id="rel-pub-toggle-all" ${p.running ? "disabled" : ""}>${allOn ? t("Ninguno") : t("Todos")}</button>
       </div>
-      <div class="rel-projects ms-proj-filter">${chipsHtml || `<span class="muted">No se han podido cargar los proyectos del grupo.</span>`}</div>
+      <div class="rel-projects ms-proj-filter">${chipsHtml || `<span class="muted">${t("No se han podido cargar los proyectos del grupo.")}</span>`}</div>
 
       ${resultsHtml}
 
       <div class="rel-actions">
-        <button class="btn btn-primary" id="rel-publish" ${canRun ? "" : "disabled"}>${p.running ? "Publicando…" : "Publicar release"}</button>
+        <button class="btn btn-primary" id="rel-publish" ${canRun ? "" : "disabled"}>${p.running ? t("Publicando…") : t("Publicar release")}</button>
       </div>
     </div>`;
 
@@ -179,18 +179,18 @@ function confirmAndPublishReleases() {
   const targets = r.projects.filter((proj) => r.selected.has(proj.path));
   if (!targets.length) return;
   const base = calverBase(p.ref);
-  const msNote = p.milestone ? `<div class="rel-confirm-note">🏷️ Milestone: <b>${esc(p.milestone)}</b></div>` : "";
+  const msNote = p.milestone ? `<div class="rel-confirm-note">🏷️ ${t("Milestone")}: <b>${esc(p.milestone)}</b></div>` : "";
   const root = $("#modal-root");
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal">
-        <h3>Publicar <code>${esc(base)}.x</code> en ${targets.length} proyecto${targets.length === 1 ? "" : "s"}</h3>
-        <p class="muted">Tag + release desde <code>${esc(p.ref)}</code>. El patch (<code>.0</code>, <code>.1</code>…) se calcula por proyecto. No atómico: si alguno falla, el resto sí se publica.</p>
+        <h3>${t("Publicar")} <code>${esc(base)}.x</code> ${targets.length === 1 ? t("en {n} proyecto", { n: targets.length }) : t("en {n} proyectos", { n: targets.length })}</h3>
+        <p class="muted">${t("Tag + release desde")} <code>${esc(p.ref)}</code>. ${t("El patch (<code>.0</code>, <code>.1</code>…) se calcula por proyecto. No atómico: si alguno falla, el resto sí se publica.")}</p>
         <ul class="rel-confirm-list">${targets.map((proj) => `<li>${esc(proj.name)} <span class="muted">${esc(proj.path)}</span></li>`).join("")}</ul>
         ${msNote ? `<div class="rel-confirm-notes">${msNote}</div>` : ""}
         <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Cancelar</button>
-          <button class="btn btn-primary" id="modal-confirm">Publicar</button>
+          <button class="btn" id="modal-cancel">${t("Cancelar")}</button>
+          <button class="btn btn-primary" id="modal-confirm">${t("Publicar")}</button>
         </div>
       </div>
     </div>`;
@@ -228,7 +228,7 @@ async function runReleasePublish() {
     });
     const ok = p.results.results.filter((x) => x.ok).length;
     const fail = p.results.results.length - ok;
-    toast(fail ? `${ok} publicada(s), ${fail} con error` : `${ok} release(s) publicada(s)`, fail ? "warn" : "ok");
+    toast(fail ? t("{ok} publicada(s), {fail} con error", { ok, fail }) : t("{ok} release(s) publicada(s)", { ok }), fail ? "warn" : "ok");
     startReleaseStatusPoll();
   } catch (err) {
     toast(String(err.message || err), "err");
@@ -260,8 +260,8 @@ function startReleaseStatusPoll() {
       p.status.set(res.id, st);
       const now = st.pipeline?.state || null;
       if (["FAILURE", "ERROR"].includes(now) && !["FAILURE", "ERROR"].includes(before)) {
-        toast(`Pipeline en rojo · ${res.name} ${res.tag}`, "err");
-        window.monstro.notify("Pipeline de release falló", `${res.name} · ${res.tag}`);
+        toast(`${t("Pipeline en rojo")} · ${res.name} ${res.tag}`, "err");
+        window.monstro.notify(t("Pipeline de release falló"), `${res.name} · ${res.tag}`);
       }
     }
     if (state.view === "releases" && r.tab === "publish") renderReleasePublish();

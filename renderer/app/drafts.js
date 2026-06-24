@@ -13,7 +13,7 @@ async function addDraft(draft) {
   const id = globalThis.crypto?.randomUUID?.() || `d-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   state.drafts.push({ id, createdAt: new Date().toISOString(), ...draft });
   await saveDrafts();
-  toast("Borrador guardado (solo en tu Mac)", "ok");
+  toast(t("Borrador guardado (solo en tu Mac)"), "ok");
 }
 
 async function removeDraft(id) {
@@ -23,28 +23,28 @@ async function removeDraft(id) {
 
 function draftCard(draft) {
   const where = draft.kind === "inline"
-    ? `<code>${esc(draft.path)}</code> · línea ${draft.line} (${draft.side === "LEFT" ? "anterior" : "nueva"})`
-    : "comentario general";
+    ? `<code>${esc(draft.path)}</code> · ${t("línea {line} ({side})", { line: draft.line, side: draft.side === "LEFT" ? t("anterior") : t("nueva") })}`
+    : t("comentario general");
   if (state.editingDraftId === draft.id) {
     return `
       <div class="draft-card ${draft.ai ? "ai" : ""} editing" data-draft="${draft.id}">
-        <div class="draft-head">✏️ EDITANDO <span class="muted">· ${where}</span></div>
+        <div class="draft-head">✏️ ${t("EDITANDO")} <span class="muted">· ${where}</span></div>
         <textarea class="draft-editor" rows="5">${esc(draft.body)}</textarea>
         <div class="composer-actions">
-          <button class="btn draft-edit-cancel">Cancelar</button>
-          <button class="btn btn-accent draft-edit-save">Guardar</button>
+          <button class="btn draft-edit-cancel">${t("Cancelar")}</button>
+          <button class="btn btn-accent draft-edit-save">${t("Guardar")}</button>
         </div>
       </div>`;
   }
   const aiMeta = draft.ai && draft.aiModel
-    ? ` · ${esc(draft.aiModel)}${draft.aiEffort ? ` · esfuerzo ${esc(draft.aiEffort)}` : ""}`
+    ? ` · ${esc(draft.aiModel)}${draft.aiEffort ? ` · ${t("esfuerzo")} ${esc(draft.aiEffort)}` : ""}`
     : "";
   return `
     <div class="draft-card ${draft.ai ? "ai" : ""}" data-draft="${draft.id}">
-      <div class="draft-head">${draft.ai ? "🤖 BORRADOR (IA)" : "📝 BORRADOR"} <span class="muted">· ${where}${aiMeta}</span>
-        <button class="draft-edit" title="Editar borrador">✏️</button>
-        <button class="draft-pub" title="Publicar solo este borrador en GitHub">↗ Publicar</button>
-        <button class="draft-del" title="Eliminar borrador">🗑</button>
+      <div class="draft-head">${draft.ai ? `🤖 ${t("BORRADOR (IA)")}` : `📝 ${t("BORRADOR")}`} <span class="muted">· ${where}${aiMeta}</span>
+        <button class="draft-edit" title="${t("Editar borrador")}">✏️</button>
+        <button class="draft-pub" title="${t("Publicar solo este borrador en GitHub")}">↗ ${t("Publicar")}</button>
+        <button class="draft-del" title="${t("Eliminar borrador")}">🗑</button>
       </div>
       <div class="draft-body">${esc(draft.body)}</div>
     </div>`;
@@ -55,7 +55,7 @@ async function generateAiReview(pr) {
   if (state.aiGenerating) return;
   state.aiGenerating = pr.number;
   renderDetail(); // pinta el botón en loading; persiste aunque cambies de pestaña
-  toast("Generando review con IA… esto puede tardar un par de minutos", "");
+  toast(t("Generando review con IA… esto puede tardar un par de minutos"), "");
   const repoKey = `${detailRepo()}#${pr.number}`;
   try {
     const files = state.selected === pr.number && state.files
@@ -123,9 +123,9 @@ async function generateAiReview(pr) {
       state.draftKeys = new Set(await window.monstro.draftsKeys());
       renderList();
     }
-    toast(`IA (${backend} · ${model}${effort ? ` · ${effort}` : ""}): ${newDrafts.length - (summaryParts.length ? 1 : 0)} comentario(s) en línea + resumen, en borradores de #${pr.number}`, "ok");
+    toast(`${t("IA")} (${backend} · ${model}${effort ? ` · ${effort}` : ""}): ${t("{n} comentario(s) en línea + resumen, en borradores de #{num}", { n: newDrafts.length - (summaryParts.length ? 1 : 0), num: pr.number })}`, "ok");
   } catch (err) {
-    toast(`Review con IA falló: ${String(err.message || err)}`, "err");
+    toast(t("Review con IA falló: {err}", { err: String(err.message || err) }), "err");
   } finally {
     state.aiGenerating = null;
     // re-render solo si sigues mirando esa PR (puede haber cambiado mientras generaba)
@@ -168,7 +168,7 @@ function wireDraftCards(container) {
       if (draft && body) {
         draft.body = body;
         await saveDrafts();
-        toast("Borrador actualizado", "ok");
+        toast(t("Borrador actualizado"), "ok");
       }
       state.editingDraftId = null;
       renderDetail();
@@ -178,16 +178,16 @@ function wireDraftCards(container) {
 
 function confirmPublishSingle(draft) {
   const root = $("#modal-root");
-  const where = draft.kind === "inline" ? `${draft.path}:${draft.line}` : "comentario general";
+  const where = draft.kind === "inline" ? `${draft.path}:${draft.line}` : t("comentario general");
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal">
-        <h3>↗ Publicar este borrador</h3>
-        <p class="muted">${esc(where)} — se publica como comentario (sin veredicto). El resto de borradores no se tocan.</p>
+        <h3>↗ ${t("Publicar este borrador")}</h3>
+        <p class="muted">${esc(where)} — ${t("se publica como comentario (sin veredicto). El resto de borradores no se tocan.")}</p>
         <div class="draft-card ${draft.ai ? "ai" : ""}" style="max-height:180px;overflow-y:auto"><div class="draft-body">${esc(draft.body)}</div></div>
         <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Cancelar</button>
-          <button class="btn btn-primary" id="modal-confirm">Publicar en GitHub</button>
+          <button class="btn" id="modal-cancel">${t("Cancelar")}</button>
+          <button class="btn btn-primary" id="modal-confirm">${t("Publicar en GitHub")}</button>
         </div>
       </div>
     </div>`;
@@ -206,11 +206,11 @@ function confirmPublishSingle(draft) {
         comments: draft.kind === "inline" ? [draft] : [],
       });
       await removeDraft(draft.id);
-      toast("Borrador publicado ✓", "ok");
+      toast(t("Borrador publicado ✓"), "ok");
       state.conversation = await window.monstro.prConversation(detailRepo(), state.selected);
       renderDetail();
     } catch (err) {
-      toast(`No se pudo publicar (el borrador sigue guardado): ${String(err.message || err)}`, "err");
+      toast(t("No se pudo publicar (el borrador sigue guardado): {err}", { err: String(err.message || err) }), "err");
     }
   });
 }
@@ -219,12 +219,12 @@ function draftsBar() {
   if (!state.drafts.length) return "";
   return `
     <div class="drafts-bar">
-      <button class="drafts-count" id="drafts-view" title="Ver todos los borradores">📝 <b>${state.drafts.length}</b> borrador${state.drafts.length > 1 ? "es" : ""} sin publicar</button>
-      <button class="icon-btn" id="drafts-prev" title="Borrador anterior">↑</button>
-      <button class="icon-btn" id="drafts-next" title="Borrador siguiente">↓</button>
+      <button class="drafts-count" id="drafts-view" title="${t("Ver todos los borradores")}">📝 <b>${state.drafts.length}</b> ${state.drafts.length > 1 ? t("borradores sin publicar") : t("borrador sin publicar")}</button>
+      <button class="icon-btn" id="drafts-prev" title="${t("Borrador anterior")}">↑</button>
+      <button class="icon-btn" id="drafts-next" title="${t("Borrador siguiente")}">↓</button>
       <span style="flex:1"></span>
-      <button class="btn" id="drafts-discard">Descartar todos</button>
-      <button class="btn btn-primary" id="drafts-publish">Publicar…</button>
+      <button class="btn" id="drafts-discard">${t("Descartar todos")}</button>
+      <button class="btn btn-primary" id="drafts-publish">${t("Publicar…")}</button>
     </div>`;
 }
 
@@ -236,7 +236,7 @@ function wireDraftsBar() {
   $("#drafts-discard")?.addEventListener("click", async () => {
     state.drafts = [];
     await saveDrafts();
-    toast("Borradores descartados", "");
+    toast(t("Borradores descartados"), "");
     renderDetail();
   });
 }
@@ -283,7 +283,7 @@ function navigateDrafts(direction) {
   if (!drafts.length) return;
   state.draftNavIndex = (state.draftNavIndex + direction + drafts.length) % drafts.length;
   const target = drafts[state.draftNavIndex];
-  toast(`Borrador ${state.draftNavIndex + 1} de ${drafts.length}`, "");
+  toast(t("Borrador {pos} de {total}", { pos: state.draftNavIndex + 1, total: drafts.length }), "");
   scrollToDraft(target.id);
 }
 
@@ -293,26 +293,26 @@ function openDraftsViewer() {
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal modal-wide">
-        <h3>📝 Borradores de #${state.selected} (${drafts.length})</h3>
+        <h3>📝 ${t("Borradores de #{num} ({count})", { num: state.selected, count: drafts.length })}</h3>
         <div class="drafts-viewer">
           ${drafts.map((d) => `
             <div class="viewer-row" data-id="${d.id}">
               <div class="viewer-where">${d.ai ? "🤖" : "📝"} ${d.kind === "inline"
-                ? `<code>${esc(d.path)}</code>:${d.line} <span class="muted">(${d.side === "LEFT" ? "anterior" : "nueva"})</span>`
-                : `<span class="muted">comentario general</span>`}</div>
+                ? `<code>${esc(d.path)}</code>:${d.line} <span class="muted">(${d.side === "LEFT" ? t("anterior") : t("nueva")})</span>`
+                : `<span class="muted">${t("comentario general")}</span>`}</div>
               <div class="viewer-body">${esc(d.body.length > 220 ? `${d.body.slice(0, 220)}…` : d.body)}</div>
               <div class="viewer-actions">
-                <button class="btn viewer-go" data-id="${d.id}">Ir ↗</button>
-                <button class="btn viewer-edit" data-id="${d.id}" title="Editar borrador">✏️</button>
-                <button class="btn viewer-pub" data-id="${d.id}" title="Publicar solo este borrador">Publicar</button>
+                <button class="btn viewer-go" data-id="${d.id}">${t("Ir ↗")}</button>
+                <button class="btn viewer-edit" data-id="${d.id}" title="${t("Editar borrador")}">✏️</button>
+                <button class="btn viewer-pub" data-id="${d.id}" title="${t("Publicar solo este borrador")}">${t("Publicar")}</button>
                 <button class="btn viewer-del" data-id="${d.id}">🗑</button>
               </div>
             </div>`).join("")}
         </div>
         <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Cerrar</button>
-          <button class="btn" id="viewer-discard">Descartar todos</button>
-          <button class="btn btn-primary" id="viewer-publish">Publicar…</button>
+          <button class="btn" id="modal-cancel">${t("Cerrar")}</button>
+          <button class="btn" id="viewer-discard">${t("Descartar todos")}</button>
+          <button class="btn btn-primary" id="viewer-publish">${t("Publicar…")}</button>
         </div>
       </div>
     </div>`;
@@ -329,7 +329,7 @@ function openDraftsViewer() {
     close();
     state.drafts = [];
     await saveDrafts();
-    toast("Borradores descartados", "");
+    toast(t("Borradores descartados"), "");
     renderDetail();
   });
   root.querySelectorAll(".viewer-go").forEach((btn) =>
@@ -369,16 +369,16 @@ function openPublishModal() {
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal">
-        <h3>Publicar ${state.drafts.length} borrador${state.drafts.length > 1 ? "es" : ""} como review</h3>
-        <p class="muted">${inline.length} en línea · ${general.length} general${general.length === 1 ? "" : "es"} — se publican en una sola review.</p>
+        <h3>${state.drafts.length > 1 ? t("Publicar {n} borradores como review", { n: state.drafts.length }) : t("Publicar {n} borrador como review", { n: state.drafts.length })}</h3>
+        <p class="muted">${t("{inline} en línea · {general}", { inline: inline.length, general: general.length === 1 ? t("{n} general", { n: general.length }) : t("{n} generales", { n: general.length }) })} — ${t("se publican en una sola review.")}</p>
         <div class="verdict">
-          <label><input type="radio" name="verdict" value="COMMENT" checked /> 💬 Comentar</label>
-          <label><input type="radio" name="verdict" value="APPROVE" /> ✅ Aprobar</label>
-          <label><input type="radio" name="verdict" value="REQUEST_CHANGES" /> ± Pedir cambios</label>
+          <label><input type="radio" name="verdict" value="COMMENT" checked /> 💬 ${t("Comentar")}</label>
+          <label><input type="radio" name="verdict" value="APPROVE" /> ✅ ${t("Aprobar")}</label>
+          <label><input type="radio" name="verdict" value="REQUEST_CHANGES" /> ± ${t("Pedir cambios")}</label>
         </div>
         <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Cancelar</button>
-          <button class="btn btn-primary" id="modal-confirm">Publicar en GitHub</button>
+          <button class="btn" id="modal-cancel">${t("Cancelar")}</button>
+          <button class="btn btn-primary" id="modal-confirm">${t("Publicar en GitHub")}</button>
         </div>
       </div>
     </div>`;
@@ -408,11 +408,11 @@ async function publishDrafts(event) {
     });
     state.drafts = [];
     await saveDrafts();
-    toast(`Review publicada (${event === "APPROVE" ? "aprobada ✅" : event === "REQUEST_CHANGES" ? "cambios pedidos" : "comentarios"})`, "ok");
+    toast(t("Review publicada ({verdict})", { verdict: event === "APPROVE" ? t("aprobada ✅") : event === "REQUEST_CHANGES" ? t("cambios pedidos") : t("comentarios") }), "ok");
     state.conversation = await window.monstro.prConversation(detailRepo(), pr.number);
     renderDetail();
   } catch (err) {
-    toast(`No se pudo publicar (tus borradores siguen guardados): ${String(err.message || err)}`, "err");
+    toast(t("No se pudo publicar (tus borradores siguen guardados): {err}", { err: String(err.message || err) }), "err");
   }
 }
 

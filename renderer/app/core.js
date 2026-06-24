@@ -101,10 +101,11 @@ function timeAgo(iso) {
   for (const [div, label] of units) {
     if (seconds >= div) {
       const v = Math.floor(seconds / div);
-      return `hace ${v} ${label}${label === "mes" && v > 1 ? "es" : ""}`;
+      const unit = label === "mes" && v > 1 ? "meses" : label;
+      return t("hace {v} {u}", { v, u: t(unit) });
     }
   }
-  return "ahora";
+  return t("ahora");
 }
 
 function toast(message, kind = "") {
@@ -117,7 +118,7 @@ function toast(message, kind = "") {
 
 function copyText(text) {
   navigator.clipboard?.writeText(text).then(
-    () => toast("Copiado", "ok"),
+    () => toast(t("Copiado"), "ok"),
     () => {
       const ta = document.createElement("textarea");
       ta.value = text;
@@ -125,7 +126,7 @@ function copyText(text) {
       ta.select();
       document.execCommand("copy");
       ta.remove();
-      toast("Copiado", "ok");
+      toast(t("Copiado"), "ok");
     },
   );
 }
@@ -138,7 +139,7 @@ function copyRich(html, plain) {
       "text/html": new Blob([html], { type: "text/html" }),
       "text/plain": new Blob([plain], { type: "text/plain" }),
     });
-    navigator.clipboard.write([item]).then(() => toast("Copiado para el correo", "ok"), () => copyText(plain));
+    navigator.clipboard.write([item]).then(() => toast(t("Copiado para el correo"), "ok"), () => copyText(plain));
   } catch {
     copyText(plain);
   }

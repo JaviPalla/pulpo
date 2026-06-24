@@ -23,9 +23,9 @@ function saveSummary(title, data) {
 }
 
 function relevanceMeta(relevance) {
-  if (relevance === "high") return { cls: "high", label: "Alta" };
-  if (relevance === "low") return { cls: "low", label: "Baja" };
-  return { cls: "medium", label: "Media" };
+  if (relevance === "high") return { cls: "high", label: t("Alta") };
+  if (relevance === "low") return { cls: "low", label: t("Baja") };
+  return { cls: "medium", label: t("Media") };
 }
 
 /* ----- filtro por proyecto/repo del resumen (pre y post generación) ----- */
@@ -95,17 +95,17 @@ function projectFilterHtml(paths, excluded) {
     .map((path) => {
       const { name } = projectMeta(path);
       const off = excluded.has(path);
-      return `<button class="ms-proj-chip ${off ? "off" : ""}" data-path="${esc(path)}" title="${off ? "Excluido del resumen · clic para incluir" : "Incluido · clic para excluir"}">
+      return `<button class="ms-proj-chip ${off ? "off" : ""}" data-path="${esc(path)}" title="${off ? t("Excluido del resumen · clic para incluir") : t("Incluido · clic para excluir")}">
         ${projectIconHtml(path)}<span class="ms-proj-name">${esc(name)}</span>
       </button>`;
     })
     .join("");
-  return `<div class="ms-proj-filter"><span class="muted">Proyectos:</span>${chips}</div>`;
+  return `<div class="ms-proj-filter"><span class="muted">${t("Proyectos:")}</span>${chips}</div>`;
 }
 
 // HTML autocontenido (sin clases del tema) para pegar en el correo, + texto plano de fallback.
 function summaryEmailContent(title, included) {
-  const heading = `Novedades — ${title}`;
+  const heading = `${t("Novedades —")} ${title}`;
   const itemHtml = (h) => `<li>${h.kind === "epic" ? "📦 " : ""}<a href="${esc(h.url)}">${esc(h.headline)}</a></li>`;
   const richHtml = `<h3>${esc(heading)}</h3>\n<ul>\n${included.map((h) => "  " + itemHtml(h)).join("\n")}\n</ul>`;
   const plain = `${heading}\n\n${included.map((h) => `• ${h.headline}\n  ${h.url}`).join("\n")}`;
@@ -115,7 +115,7 @@ function summaryEmailContent(title, included) {
 // Cuerpo Markdown del resumen para publicarlo como snippet de GitLab (lo renderiza:
 // enlaces vivos, refs auto-expandidas). El correo pasa a ser solo el enlace al snippet.
 function summaryEmailMarkdown(title, included) {
-  const heading = `Novedades — ${title}`;
+  const heading = `${t("Novedades —")} ${title}`;
   const lines = included.map((h) => `- ${h.kind === "epic" ? "📦 " : ""}[${h.headline}](${h.url})`);
   return `# ${heading}\n\n${lines.join("\n")}\n`;
 }
@@ -130,8 +130,8 @@ function milestoneSummaryHtml() {
 
   if (m.summaryLoading) {
     return `<div class="ms-summary">
-      <div class="ms-sum-head"><h3 class="ms-sum-title">Resumen de novedades</h3> <span class="muted">· ${esc(title)}</span></div>
-      <div class="loading">Analizando tareas con IA…</div>
+      <div class="ms-sum-head"><h3 class="ms-sum-title">${t("Resumen de novedades")}</h3> <span class="muted">· ${esc(title)}</span></div>
+      <div class="loading">${t("Analizando tareas con IA…")}</div>
     </div>`;
   }
 
@@ -144,12 +144,12 @@ function milestoneSummaryHtml() {
     const filterBar = projectFilterHtml(preProjects, excluded);
     const empty = assigned.length
       ? `<div class="empty ms-sum-empty">
-           <p>Genera con IA un resumen de novedades para el correo del equipo: analiza las ${toAnalyze} tarea${toAnalyze === 1 ? "" : "s"} asignadas (de los proyectos incluidos) y las ordena por relevancia. <span class="muted">Gasta tokens.</span></p>
-           <button class="btn btn-primary" id="ms-sum-generate" ${toAnalyze ? "" : "disabled"}>Generar resumen</button>
+           <p>${t(toAnalyze === 1 ? "Genera con IA un resumen de novedades para el correo del equipo: analiza la {n} tarea asignada (de los proyectos incluidos) y las ordena por relevancia." : "Genera con IA un resumen de novedades para el correo del equipo: analiza las {n} tareas asignadas (de los proyectos incluidos) y las ordena por relevancia.", { n: toAnalyze })} <span class="muted">${t("Gasta tokens.")}</span></p>
+           <button class="btn btn-primary" id="ms-sum-generate" ${toAnalyze ? "" : "disabled"}>${t("Generar resumen")}</button>
          </div>`
-      : `<div class="empty ms-sum-empty"><p>No hay tareas asignadas en este milestone que resumir.</p></div>`;
+      : `<div class="empty ms-sum-empty"><p>${t("No hay tareas asignadas en este milestone que resumir.")}</p></div>`;
     return `<div class="ms-summary">
-      <div class="ms-sum-head"><h3 class="ms-sum-title">Resumen de novedades</h3> <span class="muted">· ${esc(title)}</span></div>
+      <div class="ms-sum-head"><h3 class="ms-sum-title">${t("Resumen de novedades")}</h3> <span class="muted">· ${esc(title)}</span></div>
       ${filterBar}
       ${empty}
     </div>`;
@@ -161,7 +161,7 @@ function milestoneSummaryHtml() {
   const visible = items.filter((it) => !excluded.has(pathOf(it)));
   const includedCount = visible.filter((it) => it.included).length;
   const when = stored.generatedAt ? new Date(stored.generatedAt).toLocaleString("es-ES") : "";
-  const meta = `Generado el ${esc(when)}${stored.model ? ` · ${esc(stored.model)}` : ""}`;
+  const meta = `${t("Generado el {when}", { when: esc(when) })}${stored.model ? ` · ${esc(stored.model)}` : ""}`;
 
   // Conserva el índice original (data-idx → stored.items) aunque se oculten filas por proyecto.
   const rowsHtml = items
@@ -170,15 +170,15 @@ function milestoneSummaryHtml() {
     .map(({ it, idx }) => {
       const rel = relevanceMeta(it.relevance);
       return `<div class="ms-sum-row ${it.included ? "" : "excluded"}" data-idx="${idx}" draggable="true">
-        <span class="ms-sum-grip" title="Arrastra para reordenar">⠿</span>
-        <input type="checkbox" class="ms-task-check ms-sum-check" ${it.included ? "checked" : ""} title="Incluir en el correo" />
+        <span class="ms-sum-grip" title="${t("Arrastra para reordenar")}">⠿</span>
+        <input type="checkbox" class="ms-task-check ms-sum-check" ${it.included ? "checked" : ""} title="${t("Incluir en el correo")}" />
         <span class="ms-sum-rel ${rel.cls}">${rel.label}</span>
         <div class="ms-sum-texts">
           <div class="ms-sum-headline">${it.kind === "epic" ? "📦 " : ""}${esc(it.headline)}</div>
           <div class="ms-sum-orig muted">${esc(it.title)}</div>
         </div>
-        <button class="icon-btn ms-sum-edit" title="Editar título">✎</button>
-        <button class="icon-btn ms-sum-open" data-url="${esc(it.url)}" title="Abrir en GitLab">↗</button>
+        <button class="icon-btn ms-sum-edit" title="${t("Editar título")}">✎</button>
+        <button class="icon-btn ms-sum-open" data-url="${esc(it.url)}" title="${t("Abrir en GitLab")}">↗</button>
       </div>`;
     })
     .join("");
@@ -187,27 +187,27 @@ function milestoneSummaryHtml() {
   const { heading, itemHtml } = summaryEmailContent(title, included);
   const previewBody = included.length
     ? `<h4>${esc(heading)}</h4><ul>${included.map(itemHtml).join("")}</ul>`
-    : `<p class="muted">No hay novedades incluidas. Marca alguna tarea arriba.</p>`;
+    : `<p class="muted">${t("No hay novedades incluidas. Marca alguna tarea arriba.")}</p>`;
 
   return `<div class="ms-summary">
     <div class="ms-sum-head">
-      <h3 class="ms-sum-title">Resumen de novedades</h3> <span class="muted">· ${esc(title)}</span>
+      <h3 class="ms-sum-title">${t("Resumen de novedades")}</h3> <span class="muted">· ${esc(title)}</span>
       <span class="ms-sum-meta muted">${meta}</span>
-      <span class="ms-counter ms-sum-included">${includedCount} de ${visible.length} incluidas</span>
-      <button class="btn" id="ms-sum-regenerate" title="Vuelve a llamar a la IA (gasta tokens)">Regenerar</button>
+      <span class="ms-counter ms-sum-included">${t("{included} de {total} incluidas", { included: includedCount, total: visible.length })}</span>
+      <button class="btn" id="ms-sum-regenerate" title="${t("Vuelve a llamar a la IA (gasta tokens)")}">${t("Regenerar")}</button>
     </div>
     ${filterBar}
     <div class="ms-sum-list">${rowsHtml}</div>
     <div class="ms-sum-preview-wrap">
       <div class="ms-sum-preview-head">
-        <span class="muted">Vista previa del correo</span>
+        <span class="muted">${t("Vista previa del correo")}</span>
         <span class="ms-sum-actions">
-          <button class="btn" id="ms-sum-copy">Copiar para el correo</button>
-          <button class="btn btn-primary" id="ms-sum-publish" title="Publica el resumen como snippet de GitLab y copia el enlace para el correo">Publicar enlace en GitLab</button>
+          <button class="btn" id="ms-sum-copy">${t("Copiar para el correo")}</button>
+          <button class="btn btn-primary" id="ms-sum-publish" title="${t("Publica el resumen como snippet de GitLab y copia el enlace para el correo")}">${t("Publicar enlace en GitLab")}</button>
         </span>
       </div>
       <div class="ms-sum-preview collapsed" id="ms-sum-preview">${previewBody}</div>
-      <button class="btn ghost ms-sum-readmore hidden" id="ms-sum-readmore">Leer más</button>
+      <button class="btn ghost ms-sum-readmore hidden" id="ms-sum-readmore">${t("Leer más")}</button>
     </div>
   </div>`;
 }
@@ -220,7 +220,7 @@ async function generateMilestoneSummary(title) {
   const excluded = loadExcludedProjects(title);
   const assigned = m.issues.filter((iss) => iss.assignees.length && !excluded.has(iss.projectPath));
   if (!assigned.length) {
-    toast("No hay tareas asignadas (de proyectos incluidos) que resumir", "");
+    toast(t("No hay tareas asignadas (de proyectos incluidos) que resumir"), "");
     return;
   }
   const payload = assigned.map((iss) => ({
@@ -254,7 +254,7 @@ async function generateMilestoneSummary(title) {
     };
     saveSummary(title, stored);
   } catch (err) {
-    toast(`Error generando el resumen: ${String(err.message || err)}`, "err");
+    toast(`${t("Error generando el resumen:")} ${String(err.message || err)}`, "err");
   } finally {
     m.summaryLoading = false;
     m.summaryPreviewExpanded = false;
@@ -375,7 +375,7 @@ function wireMilestoneSummary() {
     const stored = loadSummary(title);
     const included = (stored?.items || []).filter((it) => it.included);
     if (!included.length) {
-      toast("No hay novedades incluidas para copiar", "");
+      toast(t("No hay novedades incluidas para copiar"), "");
       return;
     }
     const { richHtml, plain } = summaryEmailContent(title, included);
@@ -389,20 +389,20 @@ function wireMilestoneSummary() {
     const stored = loadSummary(title);
     const included = (stored?.items || []).filter((it) => it.included);
     if (!included.length) {
-      toast("No hay novedades incluidas para publicar", "");
+      toast(t("No hay novedades incluidas para publicar"), "");
       return;
     }
     const markdown = summaryEmailMarkdown(title, included);
     btn.disabled = true;
     const prev = btn.textContent;
-    btn.textContent = "Publicando…";
+    btn.textContent = t("Publicando…");
     try {
-      const { url } = await window.monstro.publishMilestoneSnippet(`Novedades — ${title}`, markdown);
+      const { url } = await window.monstro.publishMilestoneSnippet(`${t("Novedades —")} ${title}`, markdown);
       copyText(url);
-      toast("Snippet publicado · enlace copiado", "ok");
+      toast(t("Snippet publicado · enlace copiado"), "ok");
       window.monstro.openExternal(url);
     } catch (err) {
-      toast(`Error publicando el snippet: ${String(err.message || err)}`, "err");
+      toast(`${t("Error publicando el snippet:")} ${String(err.message || err)}`, "err");
     } finally {
       btn.disabled = false;
       btn.textContent = prev;
@@ -418,11 +418,11 @@ function wireMilestoneSummary() {
     const overflows = preview.scrollHeight > preview.clientHeight;
     if (overflows || m.summaryPreviewExpanded) {
       readMore.classList.remove("hidden");
-      readMore.textContent = m.summaryPreviewExpanded ? "Leer menos" : "Leer más";
+      readMore.textContent = m.summaryPreviewExpanded ? t("Leer menos") : t("Leer más");
       readMore.addEventListener("click", () => {
         m.summaryPreviewExpanded = !m.summaryPreviewExpanded;
         preview.classList.toggle("collapsed", !m.summaryPreviewExpanded);
-        readMore.textContent = m.summaryPreviewExpanded ? "Leer menos" : "Leer más";
+        readMore.textContent = m.summaryPreviewExpanded ? t("Leer menos") : t("Leer más");
       });
     }
   }
@@ -519,13 +519,13 @@ function openBulkLabelsModal() {
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal modal-wide">
-        <h3>Etiquetas · ${keys.length} seleccionada${keys.length === 1 ? "" : "s"}</h3>
-        <p class="muted">Las rellenas se aplicarán a todas; las que quites se eliminarán de todas.</p>
-        <input type="text" class="modal-input" id="ms-label-search" placeholder="Buscar etiqueta…" />
+        <h3>${t(keys.length === 1 ? "Etiquetas · {n} seleccionada" : "Etiquetas · {n} seleccionadas", { n: keys.length })}</h3>
+        <p class="muted">${t("Las rellenas se aplicarán a todas; las que quites se eliminarán de todas.")}</p>
+        <input type="text" class="modal-input" id="ms-label-search" placeholder="${t("Buscar etiqueta…")}" />
         <div class="ms-label-pick-list" id="ms-label-list">${renderChips()}</div>
         <div class="modal-actions">
-          <button class="btn" id="modal-cancel">Cancelar</button>
-          <button class="btn btn-primary" id="modal-apply">Aplicar</button>
+          <button class="btn" id="modal-cancel">${t("Cancelar")}</button>
+          <button class="btn btn-primary" id="modal-apply">${t("Aplicar")}</button>
         </div>
       </div>
     </div>`;
@@ -570,12 +570,12 @@ function openBulkMilestoneModal() {
   root.innerHTML = `
     <div class="modal-backdrop" id="modal-backdrop">
       <div class="modal">
-        <h3>Mover a milestone · ${keys.length} seleccionada${keys.length === 1 ? "" : "s"}</h3>
+        <h3>${t(keys.length === 1 ? "Mover a milestone · {n} seleccionada" : "Mover a milestone · {n} seleccionadas", { n: keys.length })}</h3>
         <div class="ms-label-list">
           ${items}
-          <button class="ms-label-row off" data-msid="0"><span>Sin milestone</span></button>
+          <button class="ms-label-row off" data-msid="0"><span>${t("Sin milestone")}</span></button>
         </div>
-        <div class="modal-actions"><button class="btn" id="modal-cancel">Cancelar</button></div>
+        <div class="modal-actions"><button class="btn" id="modal-cancel">${t("Cancelar")}</button></div>
       </div>
     </div>`;
   const close = () => (root.innerHTML = "");

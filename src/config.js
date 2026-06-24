@@ -16,6 +16,8 @@ const DEFAULTS = {
   theme: "one-dark",
   // Tema visual de la interfaz: "default" | "liquid-glass".
   uiTheme: "default",
+  // Idioma de la interfaz: "es" | "en". null = seguir el idioma del sistema (app.getLocale()).
+  language: null,
   aiModel: "claude-opus-4-8",
   aiEffort: "high",
   lastRepo: null,
