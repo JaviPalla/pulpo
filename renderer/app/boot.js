@@ -74,6 +74,7 @@ async function boot() {
     $("#bucket-releases")?.classList.add("hidden");
     $("#bucket-releases-publish")?.classList.add("hidden");
     $("#nav-local-section")?.classList.add("hidden");
+    $("#bucket-local-empezar")?.classList.add("hidden");
     $("#bucket-local-crear")?.classList.add("hidden");
     $("#bucket-local-vincular")?.classList.add("hidden");
     $("#bucket-local-historico")?.classList.add("hidden");
@@ -109,6 +110,8 @@ async function boot() {
   if (IS_SELFTEST && SELFTEST_ROUTE === "local-vincular") runLocalLinkSelftest();
   if (IS_SELFTEST && (SELFTEST_ROUTE === "local-historico" || SELFTEST_ROUTE === "local-historico-detail")) runLocalHistorySelftest();
   if (IS_SELFTEST && SELFTEST_ROUTE === "local-list") runLocalListSelftest();
+  if (IS_SELFTEST && (SELFTEST_ROUTE === "local-empezar" || SELFTEST_ROUTE === "local-plan")) runLocalStartSelftest();
+  if (IS_SELFTEST && SELFTEST_ROUTE === "local-agents") runLocalAgentsSelftest();
 }
 
 // Selftest del listado agrupado: entra en Crear y deja la lista (repos agrupados por repo base) visible.
@@ -211,6 +214,94 @@ async function runLocalSelftest() {
   }
 }
 
+// Selftest de "Empezar tarea" (OPE-20): siembra tareas de ejemplo (sin red) y pinta el picker; en la
+// ruta local-plan abre el form y siembra un plan ya generado. No dispara IA ni creación real.
+async function runLocalStartSelftest() {
+  state.selftestNotified = true;
+  try {
+    state.view = "local";
+    state.local.tab = "empezar";
+    document.querySelectorAll(".bucket").forEach((b) => b.classList.remove("active"));
+    $("#bucket-local-empezar")?.classList.add("active");
+    try { const { rootDir, repos } = await window.monstro.localRepos(); state.local.rootDir = rootDir || "~/repositories"; state.local.repos = repos || []; }
+    catch { state.local.rootDir = "~/repositories"; state.local.repos = []; }
+    const base = "https://gitlab.openhealth.es";
+    state.local.tasks = [
+      { iid: 142, projectPath: "OpenSaludGroup/dashboard", title: "Exportar pedidos a CSV", description: "Permitir exportar el listado de pedidos a CSV desde el panel.", url: `${base}/OpenSaludGroup/dashboard/-/issues/142`, isEpic: false, labels: ["professional user", "high priority"], priority: 0 },
+      { iid: 27, projectPath: "OpenSaludGroup/epics", title: "Unificar autenticación SSO", description: "Unificar el login SSO entre el dashboard y las apps de cliente.", url: `${base}/OpenSaludGroup/epics/-/issues/27`, isEpic: true, labels: ["medium priority"], priority: 1 },
+      { iid: 90, projectPath: "OpenSaludGroup/dashboard", title: "Corrige caché de catálogo", description: "El catálogo no se invalida al cambiar precios.", url: `${base}/OpenSaludGroup/dashboard/-/issues/90`, isEpic: false, labels: ["low priority"], priority: 2 },
+    ];
+    state.local.tasksLoading = false;
+    if (SELFTEST_ROUTE === "local-plan") {
+      // Siembra repos locales + remotos seleccionables para que el mapeo plan→repo tenga opciones.
+      state.config = { ...(state.config || {}), repos: ["OpenSaludGroup/dashboard", "OpenSaludGroup/mobile"] };
+      state.local.repos = [
+        { name: "dashboard", dir: "/r/dashboard", remote: "x", gitlabPath: "OpenSaludGroup/dashboard" },
+        { name: "mobile", dir: "/r/mobile", remote: "x", gitlabPath: "OpenSaludGroup/mobile" },
+      ];
+      await openLocalPlanForm(state.local.tasks[1]); // la Epic SSO
+      const pf = state.local.planForm;
+      if (pf) {
+        pf.indications = "Mantener compatibilidad con los tokens actuales.";
+        pf.plan = {
+          objectives: ["Login SSO único entre dashboard y apps de cliente", "No romper sesiones activas"],
+          requirements: ["Mismo proveedor OIDC en todos los proyectos", "Refresco de token transparente"],
+          tests: ["Login desde dashboard propaga sesión a la app de cliente", "Token caducado se refresca sin re-login"],
+          projects: [
+            { name: "OpenSaludGroup/dashboard", tasks: ["Integrar cliente OIDC", "Exponer endpoint de refresco"] },
+            { name: "Frontend de citas (petición de consulta)", tasks: ["Consumir el SSO del dashboard", "Persistir el refresh token de forma segura"] },
+          ],
+          model: "claude-opus-4-8", effort: "max", backend: "anthropic-sdk",
+        };
+        renderLocal();
+      }
+    } else {
+      renderLocal();
+    }
+  } catch (err) {
+    console.error("[selftest] local-empezar failed:", err);
+  } finally {
+    state.selftestNotified = false;
+    notifySelftestOnce();
+  }
+}
+
+// Selftest de la vista del run en vivo (fase 3): siembra un run con timeline de ejemplo (sin lanzar
+// agentes reales) y lo pinta, para capturar la línea de tiempo + estados + acciones.
+async function runLocalAgentsSelftest() {
+  state.selftestNotified = true;
+  try {
+    state.view = "local";
+    state.local.tab = "empezar";
+    document.querySelectorAll(".bucket").forEach((b) => b.classList.remove("active"));
+    $("#bucket-local-empezar")?.classList.add("active");
+    const t = (k, text, extra) => ({ kind: k, text, ts: Date.now(), ...extra });
+    state.local.runView = {
+      id: "run-demo", title: "Unificar autenticación SSO", url: "https://gitlab.openhealth.es/OpenSaludGroup/epics/-/issues/27", isEpic: true, status: "failed",
+      projects: [
+        { dir: "/r/dashboard", name: "OpenSaludGroup/dashboard", gitlabPath: "OpenSaludGroup/dashboard", model: "claude-opus-4-8", effort: "high", rationale: "Cambio central y delicado en el login.", branch: "feat/unificar-autenticacion-sso", worktree: "/r/dashboard/.worktrees/unificar-sso-abc", status: "failed", error: "claude salió con código 1: Input must be provided either through stdin or as a prompt argument", pending: 0, timeline: [
+          t("say", "Reviso cómo está montado el login actual."),
+          t("tool", "Lee auth/login.service.ts"),
+          t("result", "El agente falló al arrancar.", { ok: false }),
+        ] },
+        { dir: "/r/mobile", name: "OpenSaludGroup/mobile", gitlabPath: "OpenSaludGroup/mobile", model: "claude-sonnet-4-6", effort: "medium", rationale: "Integración acotada, no necesita Opus.", branch: "feat/unificar-autenticacion-sso", worktree: "/r/mobile/.worktrees/unificar-sso-def", status: "done", pending: 0, finalized: true, mr: { number: 321, projectPath: "OpenSaludGroup/mobile", url: "https://gitlab.openhealth.es/OpenSaludGroup/mobile/-/merge_requests/321" }, timeline: [
+          t("tool", "Lee src/auth/store.ts"),
+          t("tool", "Edit src/auth/sso.ts"),
+          t("tool", "Ejecuta: npm test"),
+          t("result", "Integración del SSO del dashboard completada y commiteada.", { ok: true }),
+        ] },
+      ],
+    };
+    state.local.mrStatuses = { "/r/mobile": { state: "merged", merged: true } };
+    renderLocal();
+  } catch (err) {
+    console.error("[selftest] local-agents failed:", err);
+  } finally {
+    state.selftestNotified = false;
+    notifySelftestOnce();
+  }
+}
+
 // Selftest E2E del resumen: abre Milestones, cambia a la pestaña Resumen, dispara la generación
 // con IA (real) y solo captura cuando termina. Bloquea el notify automático de renderMilestones
 // poniendo selftestNotified=true hasta que el resumen está pintado.
@@ -258,6 +349,8 @@ $("#bucket-history").addEventListener("click", enterHistory);
 $("#bucket-milestones").addEventListener("click", enterMilestones);
 $("#bucket-releases").addEventListener("click", () => enterReleases("branches"));
 $("#bucket-releases-publish").addEventListener("click", () => enterReleases("publish"));
+if (window.monstro.onAgentEvent) wireAgentEvents();
+$("#bucket-local-empezar").addEventListener("click", () => enterLocal("empezar"));
 $("#bucket-local-crear").addEventListener("click", () => enterLocal("crear"));
 $("#bucket-local-vincular").addEventListener("click", () => enterLocal("vincular"));
 $("#bucket-local-historico").addEventListener("click", () => enterLocal("historico"));
@@ -275,6 +368,7 @@ function paletteEntries() {
   if (isGitlab()) entries.push({ label: "Ir a: Milestones", hint: "tareas por persona", run: enterMilestones });
   if (isGitlab()) entries.push({ label: "Ir a: Releases · Ramas", hint: "generar release branches", run: () => enterReleases("branches") });
   if (isGitlab()) entries.push({ label: "Ir a: Releases · Publicar", hint: "crear tag + release", run: () => enterReleases("publish") });
+  if (isGitlab()) entries.push({ label: "Trabajo local: Empezar tarea", hint: "elegir Epic/Issue → plan → agentes", run: () => enterLocal("empezar") });
   if (isGitlab()) entries.push({ label: "Trabajo local: Crear tarea", hint: "Issue/Epic + MR desde local", run: () => enterLocal("crear") });
   if (isGitlab()) entries.push({ label: "Trabajo local: Vincular tarea", hint: "vincular local a una tarea existente", run: () => enterLocal("vincular") });
   if (isGitlab()) entries.push({ label: "Trabajo local: Histórico", hint: "trabajos creados desde Monstro", run: () => enterLocal("historico") });

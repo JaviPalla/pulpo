@@ -914,6 +914,34 @@ async function searchGroupIssues(query) {
   }));
 }
 
+// Tareas (issues abiertas del grupo) asignadas al usuario, para el flujo "Empezar tarea" (OPE-20).
+// Devuelve la forma mínima + `labels` y `priority` para que el renderer ordene por prioridad y
+// oculte por defecto las terminadas (pending check / finished). El estado closed ya se excluye con
+// state=opened; el filtrado fino por etiqueta lo hace el renderer (filtros habituales encima).
+async function listMyTasks() {
+  const group = milestonesGroup();
+  if (!group) throw new Error("No hay grupo configurado (revisa repos o config.milestones.group).");
+  const me = await viewer();
+  const issues = await apiAll(
+    `/groups/${encodeURIComponent(group)}/issues?scope=all&assignee_username=${encodeURIComponent(me.login)}&state=opened&order_by=updated_at`,
+  );
+  return (Array.isArray(issues) ? issues : []).map((it) => {
+    const labels = Array.isArray(it.labels) ? it.labels : [];
+    const lower = labels.map((l) => l.toLowerCase());
+    const priority = lower.includes("high priority") ? 0 : lower.includes("medium priority") ? 1 : lower.includes("low priority") ? 2 : 3;
+    return {
+      iid: it.iid,
+      projectPath: (it.references?.full || "").split("#")[0] || null,
+      title: it.title,
+      description: it.description || "",
+      url: it.web_url,
+      isEpic: isEpicUrl(it.web_url),
+      labels,
+      priority,
+    };
+  });
+}
+
 // Las Epics viven como issues en el proyecto "epics" del grupo: las detectamos por el último
 // segmento del path del proyecto en su URL.
 // ponytail: nombre de proyecto "epics" hardcodeado; si vuestra instancia lo llama distinto,
@@ -1072,6 +1100,7 @@ module.exports = {
   mrStatus,
   issueStatus,
   searchGroupIssues,
+  listMyTasks,
   collapseMilestoneEpics,
   releaseDefaults,
   generateReleaseBranches,

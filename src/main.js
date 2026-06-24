@@ -4,6 +4,7 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const { app, BrowserWindow, ipcMain, shell, nativeTheme, Notification, dialog } = require("electron");
+const agents = require("./agents");
 const ai = require("./ai");
 const config = require("./config");
 const drafts = require("./drafts");
@@ -54,6 +55,9 @@ function createWindow() {
     },
   });
 
+  // OPE-20 fase 3: los agentes emiten eventos de timeline/estado al renderer por este canal.
+  agents.init((type, payload) => { if (win && !win.isDestroyed()) win.webContents.send(type, payload); });
+
   // Los enlaces externos se abren en el navegador, nunca dentro de la app.
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
@@ -69,6 +73,17 @@ function localRootGuard(dir) {
     throw new Error("Ruta fuera del directorio raíz configurado");
   }
   return root;
+}
+
+// Plan → Markdown para publicarlo como nota en la Epic/Issue de GitLab (OPE-20: que no se pierda y
+// lo vea todo el equipo). GitLab renderiza la nota como markdown (la "preview" que pide el usuario).
+function planMarkdown({ title, indications, objectives, requirements, tests, projects }) {
+  const bullets = (arr) => (arr || []).map((x) => `- ${x}`).join("\n");
+  const sec = (h, arr) => ((arr || []).length ? `\n### ${h}\n${bullets(arr)}\n` : "");
+  const projs = (projects || [])
+    .map((p) => `\n**${p.name}**${p.model ? ` _(agente: ${p.model}${p.effort ? ` · ${p.effort}` : ""})_` : ""}\n${bullets(p.tasks)}`)
+    .join("\n");
+  return `## 🤖 Plan de trabajo (Monstro)\n\n_Plan aprobado y lanzado a los agentes el ${new Date().toLocaleString("es-ES")}._\n${indications ? `\n> **Indicaciones:** ${indications}\n` : ""}${sec("🎯 Objetivos", objectives)}${sec("📋 Requisitos", requirements)}${projects && projects.length ? `\n### 📦 Trabajo por proyecto\n${projs}\n` : ""}${sec("🧪 Pruebas", tests)}`;
 }
 
 // Prepara la rama de una MR en un repo local: (opcional) crea una rama feature, commitea los cambios
@@ -334,6 +349,78 @@ function wireIpc() {
   });
   // Busca Issues/Epics abiertas del grupo (para el flujo Vincular tarea).
   ipcMain.handle("local:searchIssues", async (_event, { query }) => gh().searchGroupIssues(query));
+  // OPE-20 "Empezar tarea": tareas (issues abiertas) del grupo asignadas a mí, para el picker.
+  ipcMain.handle("local:myTasks", async () => gh().listMyTasks());
+  // OPE-20: plan aprobable de la tarea elegida. Modelo/esfuerzo los elige el usuario (por defecto
+  // el más alto). NO ejecuta nada: solo devuelve la propuesta de plan que el usuario aprobará.
+  ipcMain.handle("local:proposePlan", async (_event, { title, description, isEpic, indications, repos, available, model, effort }) => {
+    const safeRepos = (Array.isArray(repos) ? repos : []).filter((r) => typeof r === "string" && r.trim()).slice(0, 20);
+    const safeAvail = (Array.isArray(available) ? available : []).filter((a) => a && typeof a.path === "string" && a.path.trim()).map((a) => ({ path: a.path, name: a.name || a.path })).slice(0, 60);
+    return ai.proposePlan({ title, description, isEpic, indications, repos: safeRepos, available: safeAvail, model, effort });
+  });
+  // OPE-20 fase 3: arranca el run. El "orquestador" (ai.planAgents) decide modelo/esfuerzo por
+  // proyecto (queda en el log del run); luego agents.startRun crea worktrees y lanza los agentes.
+  // Acción que SÍ ejecuta procesos locales reales → solo se dispara por acción explícita del usuario.
+  ipcMain.handle("agents:start", async (_event, { title, url, isEpic, indications, objectives, requirements, tests, projects, taskProjectPath, taskIid }) => {
+    const list = Array.isArray(projects) ? projects : [];
+    if (!list.length) throw new Error("No hay proyectos sobre los que trabajar.");
+    for (const p of list) localRootGuard(p.dir);
+    let assigned = list.map(() => ({ model: "claude-sonnet-4-6", effort: "medium", rationale: "(orquestador no disponible)" }));
+    try { assigned = (await ai.planAgents({ title, projects: list.map((p) => ({ name: p.name, tasks: p.tasks })) })).projects; }
+    catch { /* si el orquestador falla, cada proyecto cae a un default razonable */ }
+    const merged = list.map((p, i) => ({ ...p, model: assigned[i] && assigned[i].model, effort: assigned[i] && assigned[i].effort, rationale: assigned[i] && assigned[i].rationale }));
+    // Requisito del usuario: el plan lanzado queda registrado como nota markdown en la Epic/Issue de
+    // GitLab (no se pierde y todo el equipo lo ve). Best-effort: si falla, no aborta el lanzamiento.
+    let planNote = null;
+    if (taskProjectPath && Number.isInteger(taskIid)) {
+      try { const c = await gh().addIssueComment(taskProjectPath, taskIid, planMarkdown({ title, indications, objectives, requirements, tests, projects: merged })); planNote = c && (c.url || c.html_url || true); }
+      catch (err) { planNote = { error: String(err.message || err) }; }
+    }
+    return { ...(await agents.startRun({ title, url, isEpic, indications, objectives, requirements, tests, projects: merged })), planNote };
+  });
+  ipcMain.handle("agents:list", () => agents.listRuns());
+  ipcMain.handle("agents:get", (_event, { runId }) => agents.getRun(runId));
+  ipcMain.handle("agents:resume", (_event, { runId, projectDir, guidance }) => { localRootGuard(projectDir); return agents.resumeRun(runId, projectDir, guidance); });
+  ipcMain.handle("agents:stop", (_event, { runId, projectDir }) => agents.stopRun(runId, projectDir));
+  ipcMain.handle("agents:remove", (_event, { runId }) => agents.removeRun(runId));
+  ipcMain.handle("agents:openEditor", (_event, { projectDir, worktree }) => { localRootGuard(projectDir); return agents.openEditor(projectDir, worktree); });
+  // OPE-20 fase 4 (cierre): commit (si hay cambios) + push de la rama del worktree + crear la MR. A
+  // golpe de click sobre un proyecto ya trabajado por el agente. Acción outward → solo por click.
+  ipcMain.handle("agents:finalize", async (_event, { runId, projectDir, commitMessage }) => {
+    const run = agents.getRun(runId);
+    if (!run) throw new Error("Run no encontrado.");
+    const proj = run.projects.find((p) => p.dir === projectDir);
+    if (!proj || !proj.worktree) throw new Error("Proyecto/worktree no encontrado.");
+    if (!proj.gitlabPath) throw new Error("El proyecto no tiene remote de GitLab.");
+    localRootGuard(projectDir);
+    const steps = [];
+    let commit = null;
+    if (await local.isDirty(proj.worktree)) {
+      commit = await local.commitAll(proj.worktree, commitMessage || run.title);
+      steps.push({ ok: true, text: commit ? `Commit ${commit.sha.slice(0, 8)}` : "Sin cambios que commitear" });
+    }
+    await local.pushBranch(proj.worktree, proj.branch);
+    steps.push({ ok: true, text: `Push de ${proj.branch} a origin` });
+    const desc = `${run.url ? `Relacionado: ${run.url}\n\n` : ""}${(proj.tasks || []).map((t) => `- ${t}`).join("\n")}`;
+    const mr = await gh().createMergeRequest(proj.gitlabPath, { sourceBranch: proj.branch, targetBranch: proj.sourceBranch, title: run.title, description: desc });
+    agents.updateProject(runId, projectDir, { mr, finalized: true, commit });
+    return { mr, commit, steps };
+  });
+  // Diff de los cambios del agente (rama del worktree vs su base), para verlos DENTRO de la app.
+  ipcMain.handle("agents:diff", async (_event, { projectDir, worktree, base, branch }) => {
+    localRootGuard(projectDir);
+    return { diff: (await local.branchDiff(worktree, base, branch)) || (await local.workingDiff(worktree)) };
+  });
+  // Estado de las MRs creadas (merged?), para mostrar el icono de limpiar el worktree stale.
+  ipcMain.handle("agents:mrStatuses", async (_event, { runId }) => {
+    const run = agents.getRun(runId);
+    if (!run) return {};
+    const out = {};
+    for (const p of run.projects) if (p.mr) { try { out[p.dir] = await gh().mrStatus(p.mr.projectPath, p.mr.number); } catch { /* best-effort */ } }
+    return out;
+  });
+  ipcMain.handle("agents:cleanupWorktree", async (_event, { runId, projectDir }) => { localRootGuard(projectDir); return agents.cleanupWorktree(runId, projectDir); });
+
   // Orquesta el flujo Vincular: por cada proyecto push → MR vinculada a la Issue/Epic existente.
   // Misma proyecto que la issue → "Closes #iid" (auto-cierra); otro proyecto/Epic → referencia cruzada.
   ipcMain.handle("local:linkTask", async (_event, { issue, projects }) => {

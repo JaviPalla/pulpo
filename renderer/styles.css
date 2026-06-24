@@ -1395,3 +1395,108 @@ div.lf-proj { border: 1px solid var(--border); border-radius: 10px; padding: 10p
 .mascot { display: inline-block; vertical-align: middle; }
 .brand { display: flex; align-items: center; gap: 8px; }
 .welcome-logo .mascot { filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.25)); }
+
+/* ---------- OPE-20: Empezar tarea (picker + plan) ---------- */
+.ico-local-empezar { color: var(--green); }
+.ls-toolbar { display: flex; align-items: center; gap: 12px; margin: 12px 20px; flex-wrap: wrap; }
+.ls-search { flex: 1; min-width: 220px; padding: 7px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+.ls-search:focus { border-color: var(--accent); outline: none; }
+.ls-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); cursor: pointer; }
+.ls-toggle input { accent-color: var(--accent); width: 15px; height: 15px; }
+.ls-count { margin-left: auto; }
+.ls-list { display: flex; flex-direction: column; gap: 8px; margin: 0 20px 28px; }
+.ls-task { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-raised); cursor: pointer; }
+.ls-task:hover { border-color: var(--accent); background: var(--bg-hover); }
+.ls-task:hover .ls-go { opacity: 1; }
+.ls-pri { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 3px 8px; border-radius: 999px; flex-shrink: 0; min-width: 44px; text-align: center; }
+.ls-pri.pri-high { background: var(--red-bg); color: var(--red); }
+.ls-pri.pri-med { background: var(--purple-bg); color: var(--purple); }
+.ls-pri.pri-low { background: var(--bg-hover); color: var(--text-muted); }
+.ls-pri.pri-none { background: var(--bg-hover); color: var(--text-muted); }
+.ls-kind { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 8px; border-radius: 999px; background: var(--bg-hover); flex-shrink: 0; }
+.ls-kind.ls-epic { color: var(--green); }
+.ls-kind.ls-issue { color: var(--accent); }
+.ls-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.ls-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ls-proj { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+.ls-proj .ms-proj-ic { width: 14px; height: 14px; font-size: 8px; }
+.ls-go { margin-left: auto; font-size: 12px; color: var(--accent); white-space: nowrap; opacity: 0.5; transition: opacity 0.12s; }
+
+.pf-form, .pf-plan { margin: 12px 20px 8px; display: flex; flex-direction: column; gap: 16px; }
+.pf-block { display: flex; flex-direction: column; gap: 8px; }
+.pf-label { font-weight: 600; font-size: 13px; }
+.pf-textarea { padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; resize: vertical; }
+.pf-textarea:focus { border-color: var(--accent); outline: none; }
+.pf-projects { display: flex; flex-wrap: wrap; gap: 8px; }
+.pf-projects.off { opacity: 0.45; }
+.pf-proj { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; }
+.pf-proj input { accent-color: var(--accent); }
+.pf-proj .ms-proj-ic { width: 15px; height: 15px; font-size: 8px; }
+.pf-ai-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.pf-ai-row select { padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+.pf-hint { margin: 0; font-size: 12px; }
+.pf-plan-meta { font-size: 12px; color: var(--text-muted); }
+.pf-sec h3 { margin: 0 0 6px; font-size: 14px; }
+.pf-sec { padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-raised); }
+.pf-ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.pf-proj-plan { margin-top: 8px; }
+.pf-proj-head { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+.pf-proj-head .ms-proj-ic { width: 15px; height: 15px; font-size: 8px; }
+.pf-plan.approved { opacity: 0.92; }
+.pf-approved-note { padding: 10px 14px; border-radius: 8px; background: var(--green-bg); color: var(--green); font-size: 13px; font-weight: 500; }
+
+/* ---------- OPE-20 fase 3: runs de agentes ---------- */
+.nav-dot { margin-left: auto; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--red); color: #fff; font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.lr-runs { margin: 12px 20px 0; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-raised); overflow: hidden; }
+.lr-runs-head { padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--text-muted); border-bottom: 1px solid var(--border); }
+.lr-run-row { display: flex; align-items: center; gap: 10px; padding: 9px 14px; cursor: pointer; border-bottom: 1px solid var(--border); }
+.lr-run-row:last-child { border-bottom: 0; }
+.lr-run-row:hover { background: var(--bg-hover); }
+.lr-run-row:hover .ls-go { opacity: 1; }
+.lr-run-title { font-weight: 600; font-size: 14px; }
+.lr-run-meta { font-size: 12px; }
+.lr-status { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 8px; border-radius: 999px; flex-shrink: 0; }
+.lr-status.st-run { background: var(--purple-bg); color: var(--purple); }
+.lr-status.st-done { background: var(--green-bg); color: var(--green); }
+.lr-status.st-fail { background: var(--red-bg); color: var(--red); }
+.lr-status.st-stop { background: var(--bg-hover); color: var(--text-muted); }
+.lr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; margin: 14px 20px 8px; }
+.lr-proj { border: 1px solid var(--border); border-radius: 10px; background: var(--bg-raised); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.lr-proj-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lr-proj-head .ms-proj-ic { width: 16px; height: 16px; font-size: 8px; }
+.lr-proj-name { font-weight: 600; font-size: 14px; }
+.lr-model { font-size: 10px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); cursor: help; }
+.lr-pend { font-size: 11px; color: var(--red); font-weight: 600; }
+.lr-proj-sub { font-size: 12px; color: var(--text-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.lr-timeline { list-style: none; margin: 0; padding: 8px 10px; max-height: 280px; overflow-y: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+.lr-timeline li { display: flex; gap: 7px; align-items: baseline; line-height: 1.35; }
+.tl-ic { flex-shrink: 0; width: 14px; text-align: center; color: var(--text-muted); }
+.tl-tx { min-width: 0; word-break: break-word; }
+.lr-timeline .tl-tool .tl-tx { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); }
+.lr-timeline .tl-say .tl-tx { color: var(--text-muted); }
+.lr-timeline .tl-blocked { color: var(--red); }
+.lr-timeline .tl-blocked .tl-ic { color: var(--red); }
+.lr-timeline .tl-result { color: var(--green); font-weight: 500; }
+.lr-timeline .tl-empty { color: var(--text-muted); }
+.lr-proj-actions { display: flex; gap: 8px; }
+
+/* ---------- OPE-20 fase 4: cierre (MR + diff + limpiar worktree) ---------- */
+.lr-mr { display: flex; align-items: center; gap: 6px; }
+.lr-cleaned { font-size: 12px; }
+.agent-diff { max-height: 60vh; overflow: auto; }
+.agent-diff.loading { color: var(--text-muted); padding: 16px; }
+.agent-diff-pre { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.45; white-space: pre; }
+.agent-diff-pre span { display: block; padding: 0 6px; }
+.agent-diff-pre .d-add { background: var(--green-bg); color: var(--green); }
+.agent-diff-pre .d-del { background: var(--red-bg); color: var(--red); }
+.agent-diff-pre .d-hunk { color: var(--accent); }
+.agent-diff-pre .d-meta { color: var(--text-muted); font-weight: 600; }
+
+/* ---------- OPE-20: mapeo plan→repo local (feedback de prueba) ---------- */
+.pf-map { background: var(--bg); }
+.pf-map-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; }
+.pf-map-theme { flex: 1; font-size: 13px; font-weight: 500; }
+.pf-map-theme.unset { color: var(--text-muted); font-style: italic; }
+.pf-map-arrow { color: var(--text-muted); }
+.pf-map-sel { min-width: 200px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-raised); color: var(--text); font: inherit; }
+.pf-map-sel:focus { border-color: var(--accent); outline: none; }

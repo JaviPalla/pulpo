@@ -455,6 +455,10 @@ async function searchGroupIssues() {
   throw new Error("Vincular tareas desde Trabajo local solo está disponible en GitLab.");
 }
 
+async function listMyTasks() {
+  throw new Error("Empezar tarea desde Trabajo local solo está disponible en GitLab.");
+}
+
 async function createIssueLink() {
   throw new Error("Vincular issues solo está disponible en GitLab.");
 }
@@ -546,6 +550,7 @@ module.exports = {
   createMergeRequest,
   createEpic,
   searchGroupIssues,
+  listMyTasks,
   createIssueLink,
   mrStatus,
   issueStatus,

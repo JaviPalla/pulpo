@@ -163,7 +163,29 @@ async function workingDiff(dir) {
   }
 }
 
-module.exports = { scanRepos, repoInfo, remotePath, parseWorktrees, parseBranches, pushBranch, branchDiff, createLocalBranch, commitAll, workingDiff, isDirty };
+// OPE-20 fase 3: crea un worktree NUEVO bajo `<dir>/.worktrees/<slug>` con una rama nueva `branch`
+// arrancando de `sourceBranch` (o su `origin/<sourceBranch>` si no existe en local). Cada agente
+// trabaja en su worktree aislado sin tocar el clon principal del usuario. Devuelve la ruta + base.
+async function addWorktree(dir, { branch, slug, sourceBranch }) {
+  if (!BRANCH_RE.test(branch || "")) throw new Error(`Nombre de rama no válido: ${branch}`);
+  if (!/^[\w.-]{1,80}$/.test(slug || "")) throw new Error(`Slug no válido: ${slug}`);
+  const wtPath = path.join(dir, ".worktrees", slug);
+  if (fs.existsSync(wtPath)) throw new Error(`Ya existe un worktree en ${wtPath}`);
+  fs.mkdirSync(path.join(dir, ".worktrees"), { recursive: true });
+  let base = sourceBranch;
+  try { await git(dir, ["rev-parse", "--verify", `refs/heads/${sourceBranch}`]); }
+  catch { base = `origin/${sourceBranch}`; }
+  await git(dir, ["worktree", "add", "-b", branch, wtPath, base]);
+  return { worktree: wtPath, branch, base };
+}
+
+// Quita un worktree (para "limpiar stale" tras fusionar la MR). --force porque puede tener cambios.
+async function removeWorktree(dir, wtPath) {
+  await git(dir, ["worktree", "remove", "--force", wtPath]);
+  return { ok: true };
+}
+
+module.exports = { scanRepos, repoInfo, remotePath, parseWorktrees, parseBranches, pushBranch, branchDiff, createLocalBranch, commitAll, workingDiff, isDirty, addWorktree, removeWorktree };
 
 // Auto-verificación: `node src/local.js [dir]` (dir por defecto = el padre de este repo).
 if (require.main === module) {

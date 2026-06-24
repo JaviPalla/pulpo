@@ -17,11 +17,32 @@ contextBridge.exposeInMainWorld("monstro", {
   localProposeEpic: (payload) => ipcRenderer.invoke("local:proposeEpic", payload),
   localCreateEpicTask: (payload) => ipcRenderer.invoke("local:createEpicTask", payload),
   localSearchIssues: (query) => ipcRenderer.invoke("local:searchIssues", { query }),
+  localMyTasks: () => ipcRenderer.invoke("local:myTasks"),
+  localProposePlan: (payload) => ipcRenderer.invoke("local:proposePlan", payload),
   localLinkTask: (payload) => ipcRenderer.invoke("local:linkTask", payload),
   localItemStatuses: (items) => ipcRenderer.invoke("local:itemStatuses", { items }),
   localHistoryList: () => ipcRenderer.invoke("localHistory:list"),
   localHistoryRemove: (id) => ipcRenderer.invoke("localHistory:remove", { id }),
   localHistoryClear: () => ipcRenderer.invoke("localHistory:clear"),
+  agentsStart: (payload) => ipcRenderer.invoke("agents:start", payload),
+  agentsList: () => ipcRenderer.invoke("agents:list"),
+  agentsGet: (runId) => ipcRenderer.invoke("agents:get", { runId }),
+  agentsResume: (runId, projectDir, guidance) => ipcRenderer.invoke("agents:resume", { runId, projectDir, guidance }),
+  agentsStop: (runId, projectDir) => ipcRenderer.invoke("agents:stop", { runId, projectDir }),
+  agentsRemove: (runId) => ipcRenderer.invoke("agents:remove", { runId }),
+  agentsOpenEditor: (projectDir, worktree) => ipcRenderer.invoke("agents:openEditor", { projectDir, worktree }),
+  agentsFinalize: (runId, projectDir, commitMessage) => ipcRenderer.invoke("agents:finalize", { runId, projectDir, commitMessage }),
+  agentsDiff: (projectDir, worktree, base, branch) => ipcRenderer.invoke("agents:diff", { projectDir, worktree, base, branch }),
+  agentsMrStatuses: (runId) => ipcRenderer.invoke("agents:mrStatuses", { runId }),
+  agentsCleanupWorktree: (runId, projectDir) => ipcRenderer.invoke("agents:cleanupWorktree", { runId, projectDir }),
+  // Eventos push de los agentes (timeline/estado/notificación). Devuelve un de-suscriptor.
+  onAgentEvent: (channel, cb) => {
+    const ok = ["agents:event", "agents:run", "agents:notify"];
+    if (!ok.includes(channel)) return () => {};
+    const listener = (_e, payload) => cb(payload);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.removeListener(channel, listener);
+  },
   listPRs: (repo, states) => ipcRenderer.invoke("prs:list", { repo, states }),
   searchPRs: (repos, states) => ipcRenderer.invoke("prs:search", { repos, states }),
   prDetail: (repo, number) => ipcRenderer.invoke("pr:detail", { repo, number }),
