@@ -32,6 +32,8 @@ function hideSplash() {
 setTimeout(hideSplash, 8000);
 
 async function boot() {
+  // Solo macOS reserva el hueco de los traffic lights; en Windows/Linux se oculta vía CSS.
+  document.body.classList.toggle("is-mac", window.monstro.platform === "darwin");
   // Marca del topbar = mascota (icono del dock) + nombre. Inyectada aquí para no duplicar el SVG.
   const brand = document.querySelector(".brand");
   if (brand) brand.innerHTML = `${mascot(22)} <strong>Monstro</strong>`;

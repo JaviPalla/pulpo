@@ -9,7 +9,10 @@
     "doctor": "node scripts/doctor.js",
     "test": "node scripts/selftest-all.js",
     "selftest": "electron . --selftest",
-    "icon": "electron scripts/make-icon.js"
+    "icon": "electron scripts/make-icon.js",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win"
   },
   "author": "Jesús García (JesusGR4)",
   "contributors": [
@@ -29,9 +32,34 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "electron": "^42.4.0"
+    "electron": "^42.4.0",
+    "electron-builder": "^25.1.8"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1"
+  },
+  "build": {
+    "appId": "com.javipalla.monstro",
+    "productName": "Monstro",
+    "files": [
+      "src/**/*",
+      "renderer/**/*",
+      "assets/icon-512.png"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": ["dmg", "zip"]
+    },
+    "win": {
+      "target": ["nsis"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

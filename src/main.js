@@ -2,6 +2,7 @@
 
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
 const { app, BrowserWindow, ipcMain, shell, nativeTheme, Notification, dialog } = require("electron");
 const ai = require("./ai");
 const config = require("./config");
@@ -14,7 +15,8 @@ const provider = require("./provider");
 const gh = () => provider.current();
 
 const SELFTEST = process.argv.includes("--selftest");
-const SELFTEST_SHOT = "/tmp/monstro-selftest.png";
+// os.tmpdir() en vez de /tmp: en Windows /tmp no existe (sería C:\tmp), aquí da %TEMP%.
+const SELFTEST_SHOT = path.join(os.tmpdir(), "monstro-selftest.png");
 const SELFTEST_ROUTE = (process.argv.find((a) => a.startsWith("--selftest-route=")) || "").split("=")[1] || "list";
 // La ruta de resumen espera a una IA (lenta con Opus); la de releases proxea los avatares del grupo
 // entero (groupProjects). Ambas necesitan más margen que los 20s por defecto.
@@ -30,8 +32,9 @@ function createWindow() {
     minWidth: 980,
     minHeight: 600,
     title: "Monstro",
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 16, y: 14 },
+    // hiddenInset + traffic lights son solo macOS. En Windows/Linux dejamos el marco nativo
+    // (con sus botones minimizar/maximizar/cerrar); si no, la ventana se quedaría sin controles.
+    ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset", trafficLightPosition: { x: 16, y: 14 } } : {}),
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#1b1f24" : "#f6f8fa",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
