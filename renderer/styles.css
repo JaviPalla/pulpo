@@ -354,6 +354,9 @@ body.is-mac .traffic-pad { display: block; width: 78px; }
 .modal label { display: flex; align-items: center; gap: 8px; margin-top: 12px; cursor: pointer; }
 .cp-targets { margin: 10px 0; display: flex; flex-direction: column; gap: 4px; }
 .cp-row { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }
+.cp-commits { margin: 6px 0 10px; padding-left: 18px; font-size: 12px; max-height: 180px; overflow: auto; }
+.cp-commits li { margin: 2px 0; }
+.cp-commits code { font-size: 11px; color: var(--muted); }
 
 #toast-root { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 8px; }
 .toast {
@@ -807,6 +810,35 @@ body.is-mac .traffic-pad { display: block; width: 78px; }
 .ms-task-top { display: flex; align-items: flex-start; gap: 8px; }
 .ms-task-check { margin-top: 1px; }
 .ms-task-top .ms-task-title { flex: 1; min-width: 0; }
+.ms-task-mr, .ms-task-copy {
+  flex: 0 0 auto; margin-top: -1px; font: inherit; line-height: 1.6; cursor: pointer;
+  border-radius: 6px; padding: 0 7px; border: 1px solid var(--border); background: var(--gray-bg);
+}
+.ms-task-copy { color: var(--text-muted); }
+.ms-task-copy:hover { color: var(--text); border-color: var(--text-muted); }
+.ms-task-mr { font-size: 10.5px; font-weight: 700; letter-spacing: 0.3px; }
+.ms-task-mr.open { color: #1a7f37; border-color: #1a7f37; background: rgba(26, 127, 55, 0.12); }
+.ms-task-mr.closed { color: #cf222e; border-color: #cf222e; background: rgba(207, 34, 46, 0.12); }
+.ms-task-mr:hover { filter: brightness(1.08); }
+.ms-epic-tag {
+  flex: 0 0 auto; margin-top: 1px; font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+  text-transform: uppercase; border-radius: 6px; padding: 1px 7px;
+  color: #8250df; border: 1px solid #8250df; background: rgba(130, 80, 223, 0.12);
+}
+.ms-epic-caret {
+  flex: 0 0 auto; margin-top: -1px; cursor: pointer; color: var(--text-muted);
+  font-size: 16px; line-height: 1.1; font-weight: 700;
+  background: none; border: none; padding: 0 3px; transition: transform 0.15s ease;
+}
+.ms-epic-caret.open { transform: rotate(90deg); }
+.ms-epic-caret:hover { color: var(--text); }
+.ms-epic-children {
+  display: flex; flex-direction: column; gap: 7px;
+  margin: 8px 0 0 18px; padding-left: 10px; border-left: 2px solid var(--border);
+}
+.ms-child { cursor: default; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--bg); }
+.ms-child:active { cursor: default; }
+.ms-epic-empty { font-size: 11.5px; color: var(--text-muted); padding: 2px 0; }
 .ms-drop.drag-over { outline: 2px dashed var(--accent); outline-offset: -2px; }
 
 /* Rail de milestones: tira horizontal arriba (sustituye al antiguo selector). Cada

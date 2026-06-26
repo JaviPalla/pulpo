@@ -53,12 +53,12 @@ const state = {
   history: { branches: [], enabled: new Set(), layout: null, rows: [], loading: false, selectedOid: null },
   // Vista de Milestones (solo GitLab): tareas (issues) del milestone agrupadas por persona.
   // filters.status: Map<label, "include"|"exclude"> (chip tri-estado); se siembra con doneLabels en "exclude".
-  milestones: { list: [], selectedTitle: null, issues: [], loading: false, labels: [], selected: new Set(), filters: { status: new Map(), showClosed: false, showUnassigned: false, seeded: false }, tab: "tasks", summaryLoading: false, summaryPreviewExpanded: false, projects: null },
+  milestones: { list: [], selectedTitle: null, issues: [], loading: false, labels: [], selected: new Set(), filters: { status: new Map(), showClosed: false, showUnassigned: false, sortPriority: false, seeded: false }, tab: "tasks", summaryLoading: false, summaryPreviewExpanded: false, projects: null },
   // Vista de Releases (solo GitLab): genera la release branch rb/<version>. `defaults` =
   // {branchPrefix, sourceBranch, ouicare} del backend; `projects` = proyectos del grupo (groupProjects,
   // con icono) entre los que elegir; `selected` = paths elegidos; `appDate` = ISO (YYYY-MM-DD) para
   // el input nativo, se convierte a DDMMYYYY al enviar; `results` = reporte de la última generación.
-  releases: { defaults: null, projects: [], loading: false, running: false, seeded: false, selected: new Set(), version: "", sourceBranch: "", appDateEnabled: true, appDate: "", results: null, tab: "branches", publish: { ref: "", milestone: "", description: "", milestonesList: null, milestonesLoading: false, running: false, results: null, status: new Map(), poll: null } },
+  releases: { defaults: null, projects: [], loading: false, running: false, seeded: false, selected: new Set(), version: "", sourceBranch: "", appDateEnabled: true, appDate: "", results: null, tab: "branches", publish: { ref: "", milestone: "", description: "", milestonesList: null, milestonesLoading: false, running: false, results: null, status: new Map(), poll: null }, pipelines: { data: new Map(), loading: new Set(), busy: new Set() } },
   // Vista de Trabajo local (solo GitLab, OPE-19): publica trabajo de ramas/worktrees locales como
   // Issues/Epics + MRs. `tab`: "crear" (Issue/Epic nuevos) | "vincular" (a una tarea existente).
   // `rootDir` = directorio raíz donde conviven los clones; `repos` = lo escaneado por local:repos.

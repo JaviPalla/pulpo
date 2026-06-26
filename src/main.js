@@ -527,6 +527,10 @@ function wireIpc() {
     if (!BRANCH_RE.test(branch)) throw new Error("Nombre de rama no válido");
     return gh().cherryPick(repo, sha, branch, { dryRun: Boolean(dryRun) });
   });
+  ipcMain.handle("pr:mrCommits", async (_event, { repo, number }) => {
+    if (!Number.isInteger(Number(number))) throw new Error("Número de MR no válido");
+    return gh().mrCommits(repo, number);
+  });
   ipcMain.handle("pr:revert", async (_event, { repo, number }) => {
     const nodeId = await gh().prNodeId(repo, number);
     return gh().revertPullRequest(nodeId);
@@ -537,6 +541,10 @@ function wireIpc() {
   ipcMain.handle("milestones:issues", async (_event, { title, includeClosed }) =>
     gh().milestoneIssues(title, { includeClosed: Boolean(includeClosed) }),
   );
+  ipcMain.handle("milestones:epicChildren", async (_event, { workItemId }) =>
+    gh().milestoneEpicChildren(workItemId),
+  );
+  ipcMain.handle("milestones:issueMRs", async (_event, { workItemIds }) => gh().issueMRs(workItemIds || []));
   ipcMain.handle("issues:groupLabels", async () => gh().groupLabels());
   ipcMain.handle("issues:groupProjects", async () => gh().groupProjects());
   ipcMain.handle("issues:update", async (_event, { projectId, iid, patch }) =>
@@ -599,6 +607,22 @@ function wireIpc() {
     if (typeof projectId !== "string" || !PATH_RE.test(projectId)) throw new Error("Proyecto no válido");
     if (typeof ref !== "string" || !BRANCH_RE.test(ref)) throw new Error("Ref no válida");
     return gh().releaseStatus(projectId, ref);
+  });
+  // Pipelines de despliegue por proyecto, ancladas a sus releases (OPE-25). `ref` opcional (tag de
+  // una release anterior); si no se pasa, el backend usa la última release. Validamos formato.
+  ipcMain.handle("releases:pipeline", async (_event, { projectId, ref }) => {
+    const PATH_RE = /^[\w.-]+(\/[\w.-]+)+$|^\d+$/;
+    if (typeof projectId !== "string" || !PATH_RE.test(projectId)) throw new Error("Proyecto no válido");
+    const tag = typeof ref === "string" && ref.trim() ? ref.trim() : null;
+    if (tag && !BRANCH_RE.test(tag)) throw new Error("Ref no válida");
+    return gh().releasePipeline(projectId, tag);
+  });
+  // Lanzar un job manual de CI. El job_id es numérico; los permisos del token son el límite real.
+  ipcMain.handle("releases:playJob", async (_event, { projectId, jobId }) => {
+    const PATH_RE = /^[\w.-]+(\/[\w.-]+)+$|^\d+$/;
+    if (typeof projectId !== "string" || !PATH_RE.test(projectId)) throw new Error("Proyecto no válido");
+    if (!/^\d+$/.test(String(jobId))) throw new Error("Job no válido");
+    return gh().playJob(projectId, jobId);
   });
 
   ipcMain.handle("shell:open", (_event, url) => {

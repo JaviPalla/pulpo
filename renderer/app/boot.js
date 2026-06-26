@@ -84,6 +84,7 @@ async function boot() {
     $("#nav-releases-section")?.classList.add("hidden");
     $("#bucket-releases")?.classList.add("hidden");
     $("#bucket-releases-publish")?.classList.add("hidden");
+    $("#bucket-releases-pipelines")?.classList.add("hidden");
     $("#nav-local-section")?.classList.add("hidden");
     $("#bucket-local-empezar")?.classList.add("hidden");
     $("#bucket-local-crear")?.classList.add("hidden");
@@ -117,6 +118,7 @@ async function boot() {
   if (IS_SELFTEST && SELFTEST_ROUTE === "milestones-summary") runMilestonesSummarySelftest();
   if (IS_SELFTEST && SELFTEST_ROUTE === "releases") enterReleases();
   if (IS_SELFTEST && SELFTEST_ROUTE === "releases-publish") enterReleases("publish");
+  if (IS_SELFTEST && SELFTEST_ROUTE === "releases-pipelines") enterReleases("pipelines");
   if (IS_SELFTEST && SELFTEST_ROUTE === "local") runLocalSelftest();
   if (IS_SELFTEST && SELFTEST_ROUTE === "local-vincular") runLocalLinkSelftest();
   if (IS_SELFTEST && (SELFTEST_ROUTE === "local-historico" || SELFTEST_ROUTE === "local-historico-detail")) runLocalHistorySelftest();
@@ -360,6 +362,7 @@ $("#bucket-history").addEventListener("click", enterHistory);
 $("#bucket-milestones").addEventListener("click", enterMilestones);
 $("#bucket-releases").addEventListener("click", () => enterReleases("branches"));
 $("#bucket-releases-publish").addEventListener("click", () => enterReleases("publish"));
+$("#bucket-releases-pipelines").addEventListener("click", () => enterReleases("pipelines"));
 if (window.monstro.onAgentEvent) wireAgentEvents();
 $("#bucket-local-empezar").addEventListener("click", () => enterLocal("empezar"));
 $("#bucket-local-crear").addEventListener("click", () => enterLocal("crear"));
@@ -379,6 +382,7 @@ function paletteEntries() {
   if (isGitlab()) entries.push({ label: t("Ir a: Milestones"), hint: t("tareas por persona"), run: enterMilestones });
   if (isGitlab()) entries.push({ label: t("Ir a: Releases · Ramas"), hint: t("generar release branches"), run: () => enterReleases("branches") });
   if (isGitlab()) entries.push({ label: t("Ir a: Releases · Publicar"), hint: t("crear tag + release"), run: () => enterReleases("publish") });
+  if (isGitlab()) entries.push({ label: t("Ir a: Releases · Pipelines"), hint: t("estado de despliegue por proyecto"), run: () => enterReleases("pipelines") });
   if (isGitlab()) entries.push({ label: t("Trabajo local: Empezar tarea"), hint: t("elegir Epic/Issue → plan → agentes"), run: () => enterLocal("empezar") });
   if (isGitlab()) entries.push({ label: t("Trabajo local: Crear tarea"), hint: t("Issue/Epic + MR desde local"), run: () => enterLocal("crear") });
   if (isGitlab()) entries.push({ label: t("Trabajo local: Vincular tarea"), hint: t("vincular local a una tarea existente"), run: () => enterLocal("vincular") });

@@ -124,9 +124,9 @@ function confirmMerge(pr) {
       toast(res.merged ? `${t("#{n} fusionada (merge commit)", { n: pr.number })}${res.branchDeleted ? t(" · rama borrada") : ""}` : t("Merge no completado"), res.merged ? "ok" : "err");
       // Tras un merge de hotfix/* (solo GitLab), ofrecer replicar el contenido a otras ramas.
       // En su propio try: un fallo aquí no debe mostrar "Merge falló" (el merge ya fue bien).
-      if (res.merged && res.sha && shouldOfferCherryPick(pr)) {
+      if (res.merged && shouldOfferCherryPick(pr)) {
         try {
-          await offerCherryPick(pr, res.sha);
+          await offerCherryPick(pr);
         } catch (cpErr) {
           toast(t("No se pudo ofrecer el cherry-pick: {err}", { err: String(cpErr.message || cpErr) }), "err");
         }
@@ -174,11 +174,37 @@ function cherryPickTargets(pr) {
   return [...new Set(targets)].filter((b) => b && b !== base);
 }
 
+/** Dry-run secuencial de todos los commits de la MR sobre una rama. ✗ al primer fallo. */
+async function dryRunBranch(repo, commits, branch) {
+  for (const commit of commits) {
+    const r = await window.monstro.cherryPick(repo, commit.sha, branch, true);
+    if (!r.ok) return { branch, ok: false, error: r.error };
+  }
+  return { branch, ok: true };
+}
+
+/** Postea una nota en la MR con las ramas a las que se replicó (visible en su actividad). */
+async function postCherryPickNote(repo, number, okResults) {
+  if (!okResults.length) return;
+  const lines = okResults.map((r) => {
+    const tip = r.newShas[r.newShas.length - 1];
+    const ref = tip ? ` (\`${tip.slice(0, 8)}\`)` : "";
+    return `- \`${r.branch}\`${ref}`;
+  });
+  const body = `🍒 Cherry-pick de los cambios de esta MR a:\n${lines.join("\n")}`;
+  try {
+    await window.monstro.commentIssue(repo, number, body);
+  } catch (err) {
+    // La nota es informativa: si falla, no rompemos el flujo (el cherry-pick ya se hizo).
+    toast(t("No se pudo dejar la nota en la MR: {err}", { err: String(err.message || err) }), "err");
+  }
+}
+
 /**
- * Pregunta como precaución (nunca auto-dispara): hace dry-run de cada rama destino,
- * muestra el resultado por-rama y deja confirmar/desmarcar antes de aplicar de verdad.
+ * Pregunta como precaución (nunca auto-dispara): muestra los commits exactos que se replican,
+ * hace dry-run de cada rama destino y deja confirmar/desmarcar antes de aplicar de verdad.
  */
-async function offerCherryPick(pr, sha) {
+async function offerCherryPick(pr) {
   const repo = detailRepo();
   const targets = cherryPickTargets(pr);
   if (!targets.length) return;
@@ -193,9 +219,19 @@ async function offerCherryPick(pr, sha) {
       </div>
     </div>`;
 
-  // Dry-run en paralelo: anticipa conflictos / ramas protegidas antes de escribir nada.
+  // Cherry-pick de los COMMITS PROPIOS de la MR (no del merge commit, que arrastra
+  // resolución de merge y commits ajenos → "commits fantasma"). Esto replica solo lo de la MR.
+  const commits = await window.monstro.mrCommits(repo, pr.number);
+  if (!commits.length) {
+    root.innerHTML = "";
+    return;
+  }
+
+  // Dry-run en paralelo por rama: anticipa conflictos / ramas protegidas antes de escribir nada.
+  // ponytail: a partir del 2º commit el dry_run es optimista (GitLab evalúa contra el tip
+  // actual, no tras aplicar los previos). Suficiente como pre-check; el apply real reporta por rama.
   const checks = await Promise.all(
-    targets.map((branch) => window.monstro.cherryPick(repo, sha, branch, true)),
+    targets.map((branch) => dryRunBranch(repo, commits, branch)),
   );
 
   await new Promise((resolve) => {
@@ -209,11 +245,16 @@ async function offerCherryPick(pr, sha) {
         return `<label class="cp-row"><input type="checkbox" id="${id}" data-branch="${esc(c.branch)}" ${ok ? "checked" : ""} /> <b>${esc(c.branch)}</b> — ${status}</label>`;
       })
       .join("");
+    const commitList = commits
+      .map((c) => `<li><code>${esc(c.shortSha)}</code> ${esc(c.title)}</li>`)
+      .join("");
     root.innerHTML = `
       <div class="modal-backdrop" id="cp-backdrop">
         <div class="modal">
           <h3>${t("Cherry-pick de #{n}", { n: pr.number })}</h3>
           <p class="muted"><b>${esc(pr.headRefName)}</b> → <b>${esc(pr.baseRefName)}</b>. ${t("Replica el contenido a:")}</p>
+          <p class="muted">${t("Se aplicarán estos {n} commit(s) de la MR:", { n: commits.length })}</p>
+          <ul class="cp-commits">${commitList}</ul>
           <div class="cp-targets">${rows}</div>
           <div class="modal-actions">
             <button class="btn" id="cp-skip">${t("Ahora no")}</button>
@@ -235,14 +276,29 @@ async function offerCherryPick(pr, sha) {
       root.innerHTML = "";
       if (!branches.length) return resolve();
       // No atómico entre ramas: aplicamos en secuencia y reportamos por-rama.
+      // Cada rama recibe los N commits de la MR en orden; si uno falla, paramos esa rama.
       const results = [];
       for (const branch of branches) {
-        results.push(await window.monstro.cherryPick(repo, sha, branch, false));
+        let ok = true;
+        let error = null;
+        const newShas = [];
+        for (const commit of commits) {
+          const r = await window.monstro.cherryPick(repo, commit.sha, branch, false);
+          if (!r.ok) {
+            ok = false;
+            error = r.error;
+            break;
+          }
+          if (r.sha) newShas.push(r.sha);
+        }
+        results.push({ branch, ok, error, newShas });
       }
       const ok = results.filter((r) => r.ok).map((r) => r.branch);
       const failed = results.filter((r) => !r.ok);
       if (ok.length) toast(t("Cherry-pick OK: {branches}", { branches: ok.join(", ") }), "ok");
       for (const f of failed) toast(t("Cherry-pick falló en {branch}: {err}", { branch: f.branch, err: f.error }), "err");
+      // Deja constancia en la actividad de la MR (como hace el cherry-pick nativo de GitLab).
+      await postCherryPickNote(repo, pr.number, results.filter((r) => r.ok));
       resolve();
     });
   });

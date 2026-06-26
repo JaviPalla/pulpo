@@ -534,11 +534,19 @@ async function cherryPick(repoFullName, sha, branch, { dryRun = false } = {}) {
   const body = { branch };
   if (dryRun) body.dry_run = true;
   try {
-    await api("POST", `/projects/${proj(repoFullName)}/repository/commits/${encodeURIComponent(sha)}/cherry_pick`, body);
-    return { branch, ok: true };
+    const res = await api("POST", `/projects/${proj(repoFullName)}/repository/commits/${encodeURIComponent(sha)}/cherry_pick`, body);
+    return { branch, ok: true, sha: res && res.id };
   } catch (err) {
     return { branch, ok: false, error: String(err.message || err) };
   }
+}
+
+// Commits PROPIOS de la MR (los de la pestaña Commits/Changes), del más viejo al más nuevo.
+// El cherry-pick replica estos, NO el merge commit: el merge commit arrastra la resolución
+// del merge y commits ajenos a la rama destino → "commits fantasma". Estos son lo exclusivo de la MR.
+async function mrCommits(repoFullName, number) {
+  const commits = await apiAll(`/projects/${proj(repoFullName)}/merge_requests/${number}/commits`);
+  return commits.map((c) => ({ sha: c.id, shortSha: c.short_id, title: c.title })).reverse();
 }
 
 /* ---------- releases (generar release branches rb/<version>) ---------- */
@@ -687,6 +695,55 @@ async function releaseStatus(projectId, ref) {
   return { pipeline, environments };
 }
 
+/**
+ * Pipelines de despliegue de un proyecto, ancladas a sus releases (OPE-25). Devuelve la lista de
+ * releases recientes (para el selector "ver anteriores") y, para el `ref`/tag pedido (o la última
+ * release si no se pasa), su pipeline + jobs. Los jobs `manual` son lanzables; cada job lleva su
+ * web_url para abrir el log en GitLab. NO atómico por proyecto: el renderer llama uno por proyecto.
+ * Solo GitLab.
+ */
+async function releasePipeline(projectId, ref) {
+  const id = proj(String(projectId));
+  // Una sola llamada para el selector de releases.
+  const rels = await api("GET", `/projects/${id}/releases?per_page=20`);
+  const releases = (rels || []).map((r) => ({
+    tag: r.tag_name,
+    name: r.name || r.tag_name,
+    createdAt: r.released_at || r.created_at || null,
+    webUrl: r._links?.self || null,
+  }));
+  const tag = ref || releases[0]?.tag || null;
+  let pipeline = null;
+  if (tag) {
+    try {
+      const pipes = await api("GET", `/projects/${id}/pipelines?ref=${encodeURIComponent(tag)}&per_page=1`);
+      const p = (pipes || [])[0];
+      if (p) {
+        const jobsRaw = await api("GET", `/projects/${id}/pipelines/${p.id}/jobs?per_page=100`).catch(() => []);
+        const jobs = (jobsRaw || []).map((j) => ({
+          id: j.id,
+          name: j.name,
+          stage: j.stage,
+          status: j.status, // GitLab raw (success/failed/manual/running/…): el renderer lo mapea a icono.
+          manual: j.status === "manual",
+          webUrl: j.web_url || null,
+        }));
+        pipeline = { id: p.id, state: mapPipeline({ status: p.status })?.state || "EXPECTED", webUrl: p.web_url || null, jobs };
+      }
+    } catch {
+      pipeline = null;
+    }
+  }
+  return { releases, tag, pipeline };
+}
+
+/** Lanza un job manual de CI (▶). Devuelve el job actualizado. Solo GitLab. */
+async function playJob(projectId, jobId) {
+  const id = proj(String(projectId));
+  const j = await api("POST", `/projects/${id}/jobs/${encodeURIComponent(String(jobId))}/play`);
+  return { id: j.id, name: j.name, status: j.status, webUrl: j.web_url || null };
+}
+
 /** GitLab revierte creando un commit directo en la rama destino (no abre MR). */
 async function revertPullRequest(encodedId) {
   const { repo, iid } = decodeId(encodedId);
@@ -786,7 +843,189 @@ async function milestoneIssues(milestoneTitle, { includeClosed = false } = {}) {
   const mt = encodeURIComponent(milestoneTitle);
   const state = includeClosed ? "all" : "opened";
   const issues = await apiAll(`/groups/${enc}/issues?milestone=${mt}&state=${state}&with_labels_details=true`);
-  return issues.map(mapIssue);
+  const mapped = issues.map(mapIssue);
+  for (const iss of mapped) iss.isEpic = isEpicUrl(iss.webUrl);
+  // Botones de MR (solo de cierre, batch rápido) para las issues normales ABIERTAS. Las cerradas
+  // se saltan en la carga (rendimiento) y se piden bajo demanda al activar "Mostrar cerradas"
+  // (issueMRs); marcadas con mrsPending. Las Epics no tienen MR propia: sus MRs son las de sus
+  // hijas, que se cargan al desplegar el caret (milestoneEpicChildren).
+  const openNonEpics = mapped.filter((iss) => !iss.isEpic && iss.state !== "closed");
+  let mrs = new Map();
+  try {
+    mrs = await developmentMRs(openNonEpics.map((iss) => `gid://gitlab/WorkItem/${iss.id}`));
+  } catch {
+    /* sin widget Development: cargan sin MR */
+  }
+  for (const iss of mapped) {
+    if (iss.isEpic) iss.mrs = [];
+    else if (iss.state === "closed") {
+      iss.mrs = [];
+      iss.mrsPending = true; // closing + related se piden al mostrar cerradas
+    } else {
+      iss.mrs = mrs.get(`gid://gitlab/WorkItem/${iss.id}`) || []; // ya tiene las de cierre
+      iss.relatedPending = true; // las referenciadas (1 query/issue) se traen en 2º plano
+    }
+  }
+  return mapped;
+}
+
+// MRs (cierre + referenciadas) de un conjunto de work items por id, bajo demanda. Para las issues
+// cerradas cuando el usuario activa "Mostrar cerradas". Devuelve { [id]: [{webUrl,state,title}] }.
+async function issueMRs(workItemIds) {
+  const ids = (workItemIds || []).map(String);
+  const map = await developmentMRs(ids.map((id) => `gid://gitlab/WorkItem/${id}`), { withRelated: true });
+  const out = {};
+  for (const id of ids) out[id] = map.get(`gid://gitlab/WorkItem/${id}`) || [];
+  return out;
+}
+
+// Tareas hijas de UNA Epic (issue) con sus MRs (cierre + referenciadas), bajo demanda al desplegar
+// el caret. Devuelve [] si no tiene hijos o la instancia no expone la jerarquía.
+async function milestoneEpicChildren(workItemId) {
+  const gid = `gid://gitlab/WorkItem/${workItemId}`;
+  const map = await workItemChildren([gid]);
+  const children = map.get(gid) || [];
+  if (children.length) {
+    const mrs = await developmentMRs(children.map((c) => c.gid), { withRelated: true });
+    for (const c of children) c.mrs = mrs.get(c.gid) || [];
+  }
+  return children;
+}
+
+// Aplica fn a cada item con concurrencia limitada (las related van 1 query por work item: sin tope
+// dispararíamos decenas de requests a la vez). Conserva el orden de entrada en el resultado.
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}
+
+// Trocea un array en lotes de tamaño n (para no reventar el límite de complejidad de GraphQL
+// de GitLab: una query con decenas de alias + connections anidados se rechaza entera).
+function chunk(arr, n) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+  return out;
+}
+
+const MR_RANK = { opened: 0, merged: 1, locked: 2, closed: 3 };
+
+// MRs que CIERRAN cada work item (widget Development), en lotes paralelos. Devuelve Map<gid,[mr]>.
+// Es lo barato: closingMergeRequests SÍ admite batch (a diferencia de relatedMergeRequests).
+async function closingMRs(gids) {
+  const out = new Map();
+  const build = (batch) =>
+    batch
+      .map(
+        (gid, i) =>
+          `a${i}: workItem(id:${JSON.stringify(gid)}){ widgets{ ... on WorkItemWidgetDevelopment {
+            closingMergeRequests { nodes { mergeRequest { webUrl state title } } }
+          } } }`,
+      )
+      .join("\n");
+  const runBatch = async (batch) => {
+    let data;
+    try {
+      data = await graphql(`query{ ${build(batch)} }`);
+    } catch (e) {
+      console.error("[monstro] closingMRs lote falló:", e.message);
+      return batch.map((gid) => [gid, []]);
+    }
+    return batch.map((gid, i) => {
+      const widget = (data?.[`a${i}`]?.widgets || []).find((w) => w && "closingMergeRequests" in w);
+      const list = [];
+      for (const n of widget?.closingMergeRequests?.nodes || []) if (n.mergeRequest) list.push(n.mergeRequest);
+      return [gid, list];
+    });
+  };
+  const batches = await Promise.all(chunk(gids, 15).map(runBatch));
+  for (const entries of batches) for (const [gid, mrs] of entries) out.set(gid, mrs);
+  return out;
+}
+
+// MRs solo-referenciadas (no de cierre) de UN work item. GitLab limita relatedMergeRequests a
+// 1 work item por query, así que va de uno en uno (úsalo solo con pocos: hijos de una Epic).
+async function relatedMRsOne(gid) {
+  try {
+    const data = await graphql(
+      `query{ wi: workItem(id:${JSON.stringify(gid)}){ widgets{ ... on WorkItemWidgetDevelopment { relatedMergeRequests { nodes { webUrl state title } } } } } }`,
+    );
+    const widget = (data?.wi?.widgets || []).find((w) => w && "relatedMergeRequests" in w);
+    return (widget?.relatedMergeRequests?.nodes || []).filter(Boolean);
+  } catch (e) {
+    console.error("[monstro] relatedMRsOne falló:", e.message);
+    return [];
+  }
+}
+
+// MRs del apartado Development de varios work items. Por defecto SOLO las de cierre (rápido, batch).
+// Con {withRelated:true} añade las solo-referenciadas (1 query por work item — GitLab no deja batch);
+// usar solo con pocos (hijos de una Epic al desplegar). Devuelve Map<gid,[{webUrl,state,title}]>.
+async function developmentMRs(gids, { withRelated = false } = {}) {
+  const closing = await closingMRs(gids);
+  const related = withRelated ? await mapLimit(gids, 8, relatedMRsOne) : [];
+  const out = new Map();
+  gids.forEach((gid, i) => {
+    const list = [...(closing.get(gid) || []), ...(withRelated ? related[i] : [])];
+    const seen = new Set();
+    const deduped = list.filter((mr) => mr.webUrl && !seen.has(mr.webUrl) && seen.add(mr.webUrl));
+    deduped.sort((a, b) => (MR_RANK[a.state] ?? 9) - (MR_RANK[b.state] ?? 9)); // abiertas primero
+    out.set(gid, deduped);
+  });
+  return out;
+}
+
+// Tareas hijas (work items) de varias Epics. Devuelve Map<gid, [child]> con cada hijo normalizado a
+// la forma de issue del board: {gid, iid, title, state("opened"|"closed"), webUrl, labels}.
+// En lotes pequeños (el connection de hijos + labels anidados pesa) y tolerante a fallo por lote.
+async function workItemChildren(gids) {
+  const out = new Map();
+  const build = (batch) =>
+    batch
+      .map(
+        (gid, i) =>
+          `a${i}: workItem(id:${JSON.stringify(gid)}){ widgets{
+            ... on WorkItemWidgetHierarchy { children { nodes {
+              id iid title state webUrl
+              widgets { ... on WorkItemWidgetLabels { labels { nodes { title color textColor } } } }
+            } } }
+          } }`,
+      )
+      .join("\n");
+  for (const batch of chunk(gids, 8)) {
+    let data;
+    try {
+      data = await graphql(`query{ ${build(batch)} }`);
+    } catch (e) {
+      console.error("[monstro] workItemChildren lote falló:", e.message);
+      for (const gid of batch) out.set(gid, []);
+      continue;
+    }
+    batch.forEach((gid, i) => {
+      const widget = (data?.[`a${i}`]?.widgets || []).find((w) => w && "children" in w);
+      const children = (widget?.children?.nodes || []).map((c) => {
+        const labelsWidget = (c.widgets || []).find((w) => w && "labels" in w);
+        return {
+          gid: c.id,
+          iid: c.iid,
+          title: c.title,
+          state: String(c.state).toLowerCase().includes("clos") ? "closed" : "opened",
+          webUrl: c.webUrl,
+          labels: (labelsWidget?.labels?.nodes || []).map((l) => ({ name: l.title, color: l.color, textColor: l.textColor })),
+          mrs: [],
+        };
+      });
+      out.set(gid, children);
+    });
+  }
+  return out;
 }
 
 // Descarga un avatar (privado, requiere token) y lo devuelve como data-URI para que el renderer
@@ -1085,11 +1324,14 @@ module.exports = {
   createBranch,
   forceUpdateBranch,
   cherryPick,
+  mrCommits,
   revertPullRequest,
   setPrDraft,
   prNodeId,
   listMilestones,
   milestoneIssues,
+  milestoneEpicChildren,
+  issueMRs,
   groupLabels,
   groupProjects,
   updateIssue,
@@ -1107,5 +1349,7 @@ module.exports = {
   nextReleaseTag,
   createReleases,
   releaseStatus,
+  releasePipeline,
+  playJob,
   createSnippet,
 };

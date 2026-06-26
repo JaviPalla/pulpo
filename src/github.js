@@ -378,6 +378,10 @@ async function cherryPick() {
   throw new Error("El cherry-pick de hotfix solo está disponible en GitLab.");
 }
 
+async function mrCommits() {
+  throw new Error("El cherry-pick de hotfix solo está disponible en GitLab.");
+}
+
 /**
  * Stubs de paridad: la vista de Milestones es una feature solo-GitLab
  * (la UI la oculta cuando provider !== "gitlab"). Si alguien las invoca aquí,
@@ -388,6 +392,14 @@ async function listMilestones() {
 }
 
 async function milestoneIssues() {
+  throw new Error("La vista de Milestones solo está disponible en GitLab.");
+}
+
+async function milestoneEpicChildren() {
+  throw new Error("La vista de Milestones solo está disponible en GitLab.");
+}
+
+async function issueMRs() {
   throw new Error("La vista de Milestones solo está disponible en GitLab.");
 }
 
@@ -429,6 +441,14 @@ async function createReleases() {
 
 async function releaseStatus() {
   throw new Error("La creación de releases solo está disponible en GitLab.");
+}
+
+async function releasePipeline() {
+  throw new Error("Las pipelines de releases solo están disponibles en GitLab.");
+}
+
+async function playJob() {
+  throw new Error("Lanzar jobs de CI solo está disponible en GitLab.");
 }
 
 async function createSnippet() {
@@ -531,11 +551,14 @@ module.exports = {
   createBranch,
   forceUpdateBranch,
   cherryPick,
+  mrCommits,
   revertPullRequest,
   setPrDraft,
   prNodeId,
   listMilestones,
   milestoneIssues,
+  milestoneEpicChildren,
+  issueMRs,
   groupLabels,
   groupProjects,
   updateIssue,
@@ -545,6 +568,8 @@ module.exports = {
   nextReleaseTag,
   createReleases,
   releaseStatus,
+  releasePipeline,
+  playJob,
   createSnippet,
   createIssue,
   createMergeRequest,

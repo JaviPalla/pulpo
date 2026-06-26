@@ -30,6 +30,8 @@ async function loadMilestones() {
     // "Mostrar cerradas" pasa a ser solo de visualización. Limitado por milestone, no es el grupo
     // entero. ponytail: si un milestone supera el cap de 500 (apiAll), las métricas se quedan cortas.
     m.issues = m.selectedTitle ? await window.monstro.milestoneIssues(m.selectedTitle, true) : [];
+    m.relatedDone = false; // reset enriquecido de MRs referenciadas para el nuevo milestone
+    m.relatedLoading = false;
     m.loading = false;
     renderMilestones();
   } catch (err) {
@@ -52,6 +54,18 @@ function pickCurrentMilestone(list) {
   });
   const containing = live.find((ms) => (!ms.startDate || ms.startDate <= today) && (!ms.dueDate || ms.dueDate >= today));
   return (containing || live[0] || list[0])?.title || null;
+}
+
+// Prioridad por etiqueta: high < medium < low < sin etiqueta. Se queda con la más alta
+// (rango más bajo) que tenga el issue. Mismo criterio que la vista de Trabajo local.
+const PRIO_RANK = { "high priority": 0, "medium priority": 1, "low priority": 2 };
+function prioRank(iss) {
+  let best = 3;
+  for (const l of iss.labels) {
+    const r = PRIO_RANK[l.name.toLowerCase()];
+    if (r !== undefined && r < best) best = r;
+  }
+  return best;
 }
 
 // Reparte cada issue en sus asignados (un issue con N asignados aparece en N personas:
@@ -78,27 +92,178 @@ function issueKey(iss) {
   return `${iss.projectId}#${iss.iid}`;
 }
 
-function milestoneCard(iss, statusSet) {
-  const chips = iss.labels
+// Etiquetas (chips) de un issue/tarea con su color real de GitLab.
+function labelChips(labels, statusSet) {
+  return (labels || [])
     .map((l) => {
-      const isStatus = statusSet.has(l.name);
+      const isStatus = statusSet && statusSet.has(l.name);
       const style = l.color ? `style="background:${l.color};color:${l.textColor || "#fff"}"` : "";
       return `<span class="ms-label ${isStatus ? "status" : ""}" ${style}>${esc(l.name)}</span>`;
     })
     .join("");
-  const key = issueKey(iss);
-  const selected = state.milestones.selected.has(key);
+}
+
+// Un botón "MR" por cada MR asociada (cierre o referencia en Development). Verde si está abierta,
+// rojo en cualquier otro estado (merged/closed). El título de la MR va en el tooltip.
+function mrButtons(mrs) {
+  return (mrs || [])
+    .map((mr) => {
+      const open = mr.state === "opened";
+      return `<button class="ms-task-mr ${open ? "open" : "closed"}" data-url="${esc(mr.webUrl)}"
+         title="${esc(mr.title || "MR")} (${esc(mr.state || "")})">MR</button>`;
+    })
+    .join("");
+}
+
+// Tarea hija de una Epic: mismo formato que un issue (título + labels + copiar/MR) pero sin
+// checkbox/drag (las hijas no participan en selección/edición masiva, solo se consultan).
+function childCard(c, statusSet) {
+  const chips = labelChips(c.labels, statusSet);
   return `
-    <div class="ms-task ${iss.state === "closed" ? "closed" : ""} ${selected ? "selected" : ""}" draggable="true"
-         data-key="${esc(key)}" data-project="${iss.projectId}" data-iid="${iss.iid}">
+    <div class="ms-task ms-child ${c.state === "closed" ? "closed" : ""}">
       <div class="ms-task-top">
-        <input type="checkbox" class="ms-task-check" ${selected ? "checked" : ""} title="${t("Seleccionar")}" />
-        <button class="ms-task-title" data-url="${esc(iss.webUrl)}" title="${t("Abrir en GitLab")}">
-          ${esc(iss.title)} <span class="ms-iid">#${iss.iid}</span>
+        <button class="ms-task-title" data-url="${esc(c.webUrl)}" title="${t("Abrir en GitLab")}">
+          ${esc(c.title)} ${c.iid ? `<span class="ms-iid">#${c.iid}</span>` : ""}
         </button>
+        ${mrButtons(c.mrs)}
+        <button class="ms-task-copy" data-url="${esc(c.webUrl)}" title="${t("Copiar enlace")}">⧉</button>
       </div>
       ${chips ? `<div class="ms-task-labels">${chips}</div>` : ""}
     </div>`;
+}
+
+function milestoneCard(iss, statusSet) {
+  const chips = labelChips(iss.labels, statusSet);
+  const key = issueKey(iss);
+  const selected = state.milestones.selected.has(key);
+  const copyBtn = `<button class="ms-task-copy" data-url="${esc(iss.webUrl)}" title="${t("Copiar enlace")}">⧉</button>`;
+  const title = `<button class="ms-task-title" data-url="${esc(iss.webUrl)}" title="${t("Abrir en GitLab")}">
+          ${esc(iss.title)} <span class="ms-iid">#${iss.iid}</span>
+        </button>`;
+  const head = `data-key="${esc(key)}" data-project="${iss.projectId}" data-iid="${iss.iid}"`;
+
+  if (iss.isEpic) {
+    // Hijos BAJO DEMANDA: si ya se cargaron (iss.childrenLoaded) los pintamos; si no, el contenedor
+    // queda vacío y el primer clic en el caret los trae (ver wireMilestoneEvents).
+    const loaded = iss.childrenLoaded;
+    const childHtml = loaded
+      ? (iss.children || []).length
+        ? iss.children.map((c) => childCard(c, statusSet)).join("")
+        : `<div class="ms-epic-empty">${t("Sin tareas hijas")}</div>`
+      : "";
+    return `
+    <div class="ms-task ms-epic ${iss.state === "closed" ? "closed" : ""} ${selected ? "selected" : ""}" draggable="true" ${head}>
+      <div class="ms-task-top">
+        <input type="checkbox" class="ms-task-check" ${selected ? "checked" : ""} title="${t("Seleccionar")}" />
+        <button class="ms-epic-caret ${loaded ? "open" : ""}" title="${t("Desplegar tareas")}">›</button>
+        ${title}
+        <span class="ms-epic-tag">Epic</span>
+        ${copyBtn}
+      </div>
+      ${chips ? `<div class="ms-task-labels">${chips}</div>` : ""}
+      <div class="ms-epic-children" ${loaded ? "" : "hidden"}>${childHtml}</div>
+    </div>`;
+  }
+
+  return `
+    <div class="ms-task ${iss.state === "closed" ? "closed" : ""} ${selected ? "selected" : ""}" draggable="true" ${head}>
+      <div class="ms-task-top">
+        <input type="checkbox" class="ms-task-check" ${selected ? "checked" : ""} title="${t("Seleccionar")}" />
+        ${title}
+        ${mrButtons(iss.mrs)}
+        ${copyBtn}
+      </div>
+      ${chips ? `<div class="ms-task-labels">${chips}</div>` : ""}
+    </div>`;
+}
+
+// Cablea los botones de una tarjeta (o de un contenedor de hijos recién inyectado): título/MR
+// abren en GitLab, copiar copia el enlace.
+function wireTaskButtons(root) {
+  root.querySelectorAll(".ms-task-title, .ms-task-mr").forEach((btn) =>
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation(); // no seleccionar la tarjeta al abrir en GitLab
+      window.monstro.openExternal(btn.dataset.url);
+    }),
+  );
+  root.querySelectorAll(".ms-task-copy").forEach((btn) =>
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      copyText(btn.dataset.url);
+    }),
+  );
+}
+
+// Despliega/colapsa una Epic. La PRIMERA vez carga sus hijas bajo demanda (rendimiento: no se traen
+// en la carga del milestone); luego quedan cacheadas en el issue y el toggle es instantáneo.
+async function toggleEpic(caret, statusSet) {
+  const m = state.milestones;
+  const card = caret.closest(".ms-task");
+  const wrap = card?.querySelector(".ms-epic-children");
+  if (!wrap) return;
+  const iss = m.issues.find((i) => issueKey(i) === card.dataset.key);
+  const expanding = wrap.hidden;
+  wrap.hidden = !expanding;
+  caret.classList.toggle("open", expanding);
+  if (!expanding || !iss || iss.childrenLoaded) return;
+  wrap.innerHTML = `<div class="ms-epic-empty">${t("Cargando…")}</div>`;
+  try {
+    const children = await window.monstro.epicChildren(iss.id);
+    iss.children = children;
+    iss.childrenLoaded = true;
+    wrap.innerHTML = children.length
+      ? children.map((c) => childCard(c, statusSet)).join("")
+      : `<div class="ms-epic-empty">${t("Sin tareas hijas")}</div>`;
+    wireTaskButtons(wrap);
+  } catch {
+    wrap.innerHTML = `<div class="ms-epic-empty">${t("No se pudieron cargar las tareas")}</div>`;
+  }
+}
+
+// Enriquece EN 2º PLANO las issues abiertas del board con sus MRs referenciadas (related): en la
+// carga solo se traen las de cierre (batch rápido); las related van 1 query/issue, así que se piden
+// después y aparecen sus labels sin bloquear el paint. Se ejecuta una sola vez por milestone.
+function maybeEnrichRelated() {
+  const m = state.milestones;
+  if (m.relatedLoading || m.relatedDone) return;
+  const pending = m.issues.filter((iss) => iss.relatedPending);
+  if (!pending.length) {
+    m.relatedDone = true;
+    return;
+  }
+  m.relatedLoading = true;
+  window.monstro.issueMRs(pending.map((iss) => iss.id)).then(
+    (res) => {
+      for (const iss of pending) {
+        iss.mrs = res[iss.id] || iss.mrs; // closing + related, ya deduplicado
+        iss.relatedPending = false;
+      }
+      m.relatedLoading = false;
+      m.relatedDone = true;
+      renderMilestones();
+    },
+    () => {
+      m.relatedLoading = false;
+      m.relatedDone = true; // no reintentar en bucle
+    },
+  );
+}
+
+// Trae bajo demanda las MRs de las issues cerradas (no se piden en la carga inicial por rendimiento).
+// Solo la primera vez: marca cada issue como ya resuelta (mrsPending=false) y cachea sus mrs.
+async function ensureClosedMRs() {
+  const m = state.milestones;
+  const pending = m.issues.filter((iss) => iss.mrsPending);
+  if (!pending.length) return;
+  try {
+    const res = await window.monstro.issueMRs(pending.map((iss) => iss.id));
+    for (const iss of pending) {
+      iss.mrs = res[iss.id] || [];
+      iss.mrsPending = false;
+    }
+  } catch {
+    for (const iss of pending) iss.mrsPending = false; // no reintentar en bucle
+  }
 }
 
 // Las "pending check*" (comprobación) y "finished" (terminada) viven ambas en doneLabels;
@@ -239,6 +404,8 @@ function renderMilestones() {
     .join("");
 
   const groups = groupIssuesByAssignee(visible);
+  // sort estable (V8): dentro del mismo rango se mantiene el orden de la API.
+  if (m.filters.sortPriority) for (const g of groups) g.issues.sort((a, b) => prioRank(a) - prioRank(b));
   const boardHtml = groups.length
     ? groups
         .map((g) => {
@@ -290,6 +457,7 @@ function renderMilestones() {
       <div class="ms-toggles">
         <label class="ms-closed-toggle"><input type="checkbox" id="ms-show-closed" ${m.filters.showClosed ? "checked" : ""} /> ${t("Mostrar cerradas")}</label>
         <label class="ms-closed-toggle"><input type="checkbox" id="ms-show-unassigned" ${m.filters.showUnassigned ? "checked" : ""} /> ${t("Mostrar sin asignar")}</label>
+        <label class="ms-closed-toggle"><input type="checkbox" id="ms-sort-prio" ${m.filters.sortPriority ? "checked" : ""} /> ${t("Ordenar por prioridad")}</label>
         <span class="ms-counter">${visible.length === 1 ? t("{n} tarea", { n: visible.length }) : t("{n} tareas", { n: visible.length })}</span>
         <button class="icon-btn" id="ms-refresh" title="${t("Recargar")}">⟳</button>
       </div>
@@ -332,13 +500,19 @@ function renderMilestones() {
     return;
   }
 
-  $("#ms-show-closed")?.addEventListener("change", (event) => {
-    // Las cerradas ya están en m.issues (se traen siempre para las métricas): solo es display.
+  $("#ms-show-closed")?.addEventListener("change", async (event) => {
+    // Las cerradas ya están en m.issues (se traen siempre para las métricas), pero sus MRs NO se
+    // piden en la carga (rendimiento): la primera vez que se muestran, se traen bajo demanda.
     m.filters.showClosed = event.target.checked;
+    if (event.target.checked) await ensureClosedMRs();
     renderMilestones();
   });
   $("#ms-show-unassigned")?.addEventListener("change", (event) => {
     m.filters.showUnassigned = event.target.checked;
+    renderMilestones();
+  });
+  $("#ms-sort-prio")?.addEventListener("change", (event) => {
+    m.filters.sortPriority = event.target.checked;
     renderMilestones();
   });
   $("#ms-refresh")?.addEventListener("click", () => {
@@ -357,10 +531,11 @@ function renderMilestones() {
       renderMilestones();
     }),
   );
-  list.querySelectorAll(".ms-task-title").forEach((btn) =>
+  wireTaskButtons(list);
+  list.querySelectorAll(".ms-epic-caret").forEach((btn) =>
     btn.addEventListener("click", (event) => {
-      event.stopPropagation(); // no seleccionar la tarjeta al abrir en GitLab
-      window.monstro.openExternal(btn.dataset.url);
+      event.stopPropagation(); // no seleccionar/arrastrar la Epic al desplegar
+      toggleEpic(btn, statusSet);
     }),
   );
 
@@ -384,6 +559,7 @@ function renderMilestones() {
   $("#ms-bulk-milestone")?.addEventListener("click", openBulkMilestoneModal);
 
   notifySelftestOnce();
+  maybeEnrichRelated(); // tras pintar, completa en 2º plano las MRs referenciadas de las abiertas
 }
 
 // Aplica un patch (objeto, o función issue→patch) a un conjunto de issues por su clave.

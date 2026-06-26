@@ -9,7 +9,8 @@ async function enterReleases(tab = "branches") {
   state.releases.tab = tab;
   closeDetail();
   document.querySelectorAll(".bucket").forEach((b) => b.classList.remove("active"));
-  $(tab === "publish" ? "#bucket-releases-publish" : "#bucket-releases")?.classList.add("active");
+  const bucketId = { publish: "#bucket-releases-publish", pipelines: "#bucket-releases-pipelines" }[tab] || "#bucket-releases";
+  $(bucketId)?.classList.add("active");
   await loadReleases();
 }
 
@@ -85,6 +86,7 @@ function renderReleases() {
     return;
   }
   if (r.tab === "publish") return renderReleasePublish();
+  if (r.tab === "pipelines") return renderReleasePipelines();
   const prefix = r.defaults.branchPrefix || "rb/";
   const projects = r.projects || [];
   const ouicarePath = r.defaults.ouicare?.projectPath || null;
