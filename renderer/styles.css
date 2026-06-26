@@ -1204,6 +1204,64 @@ body.is-mac .traffic-pad { display: block; width: 78px; }
 .rel-confirm-notes { margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
 .rel-confirm-note { font-size: 12px; color: var(--text); background: var(--yellow-bg); padding: 6px 9px; border-radius: 7px; }
 
+/* Estado de pipeline/entornos (Publicar) + tarjetas de resultado (OPE-25). */
+.rel-pipe { font-weight: 700; }
+.rel-pipe.ok { color: var(--green); }
+.rel-pipe.err { color: var(--red); }
+.rel-pipe.pending { color: var(--yellow); }
+.rel-pipe.muted { color: var(--text-muted); }
+.rel-env { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-muted); }
+.rel-env.up { border-color: var(--green); color: var(--green); }
+.rel-envs { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+
+.rel-pub-cards { display: flex; flex-direction: column; gap: 8px; margin: 8px 0; }
+.rel-pub-card { padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--bg-raised); font-size: 13px; }
+.rel-pub-card.err { border-color: var(--red); color: var(--red); }
+.rel-pub-cardtop { display: flex; align-items: center; gap: 8px; }
+.rel-pub-name { color: var(--text); }
+.rel-pub-tag { font-size: 12px; }
+.rel-pub-cardbtns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.rel-pub-btn {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 12px; cursor: pointer;
+  padding: 4px 10px; border-radius: 7px; border: 1px solid var(--border); color: var(--text); text-decoration: none;
+}
+.rel-pub-btn:hover { border-color: var(--accent); background: var(--bg-hover); }
+.rel-pub-btn.pipe { border-color: var(--accent); color: var(--accent); }
+.rel-pub-pending { font-size: 12px; }
+.rel-pub-cta { margin-top: 12px; }
+
+/* Vista Pipelines de despliegue (tablero por proyecto). */
+.rel-pl-board { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; margin-top: 12px; }
+.rel-pl-card { padding: 12px 14px; border-radius: 11px; border: 1px solid var(--border); background: var(--bg-raised); }
+.rel-pl-cardhead { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 8px; }
+.rel-pl-projname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rel-pl-relrow { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.rel-pl-rel { font: inherit; font-size: 12px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 4px 7px; max-width: 100%; }
+.rel-pl-pipehead { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 8px; }
+.rel-pl-state { color: var(--text-muted); font-size: 12px; }
+.rel-pl-pipelink { margin-left: auto; color: var(--accent); font-size: 12px; cursor: pointer; }
+.rel-pl-empty, .rel-pl-loading { font-size: 13px; padding: 4px 0; }
+.rel-pl-loading { animation: loading-pulse 1.3s ease-in-out infinite; }
+.rel-stages { display: flex; flex-direction: column; gap: 8px; }
+.rel-stage-name { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 3px; }
+.rel-stage-jobs { display: flex; flex-direction: column; gap: 3px; }
+.rel-job { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
+.rel-job-ico { width: 14px; text-align: center; font-weight: 700; }
+.rel-job.ok .rel-job-ico { color: var(--green); }
+.rel-job.err .rel-job-ico { color: var(--red); }
+.rel-job.pending .rel-job-ico { color: var(--yellow); }
+.rel-job.manual .rel-job-ico { color: var(--accent); }
+.rel-job.muted .rel-job-ico { color: var(--text-muted); }
+.rel-job-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rel-job-play {
+  font: inherit; font-size: 11px; cursor: pointer; padding: 1px 7px; border-radius: 6px;
+  border: 1px solid var(--accent); color: var(--accent); background: transparent;
+}
+.rel-job-play:hover:not(:disabled) { background: var(--accent); color: #fff; }
+.rel-job-play:disabled { opacity: 0.5; cursor: default; }
+.rel-job-log { font-size: 11px; color: var(--text-muted); cursor: pointer; text-decoration: none; }
+.rel-job-log:hover { color: var(--accent); }
+
 /* ============ Trabajo local → GitLab (OPE-19) ============ */
 .local-head { padding: 16px 20px 4px; }
 .local-head h2 { margin: 0 0 4px; font-size: 17px; }

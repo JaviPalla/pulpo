@@ -22,7 +22,7 @@ const SELFTEST_ROUTE = (process.argv.find((a) => a.startsWith("--selftest-route=
 // La ruta de resumen espera a una IA (lenta con Opus); la de releases proxea los avatares del grupo
 // entero (groupProjects). Ambas necesitan más margen que los 20s por defecto.
 const SELFTEST_TIMEOUT_MS =
-  SELFTEST_ROUTE === "milestones-summary" ? 240000 : SELFTEST_ROUTE === "releases" || SELFTEST_ROUTE === "releases-publish" || SELFTEST_ROUTE.startsWith("local") ? 60000 : 20000;
+  SELFTEST_ROUTE === "milestones-summary" ? 240000 : SELFTEST_ROUTE.startsWith("releases") || SELFTEST_ROUTE.startsWith("local") ? 60000 : 20000;
 
 let win = null;
 

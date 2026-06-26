@@ -56,7 +56,8 @@ function renderReleasePublish() {
     .concat((p.milestonesList || []).map((m) => `<option value="${esc(m.title)}" ${p.milestone === m.title ? "selected" : ""}>${esc(m.title)}</option>`))
     .join("");
 
-  // Resultados + panel de estado por proyecto (pipeline + entornos).
+  // Resultados + panel de estado por proyecto (pipeline + entornos). Presentación en tarjetas:
+  // tag destacado, estado de pipeline y accesos directos a la release y a la pipeline (OPE-25).
   let resultsHtml = "";
   if (p.results) {
     const ok = p.results.results.filter((x) => x.ok).length;
@@ -64,23 +65,25 @@ function renderReleasePublish() {
     const cls = fail ? (ok ? "warn" : "err") : "ok";
     const rowsHtml = p.results.results
       .map((res) => {
-        if (!res.ok) return `<div class="rel-res-row err" title="${esc(res.error || "")}">✕ ${esc(res.name)}: ${esc(res.error || t("error"))}</div>`;
+        if (!res.ok) return `<div class="rel-pub-card err" title="${esc(res.error || "")}"><span class="rel-pub-ico">✕</span> <b>${esc(res.name)}</b>: ${esc(res.error || t("error"))}</div>`;
         const st = p.status.get(res.id);
-        const pipe = st?.pipeline ? pipelineDot(st.pipeline.state) : `<span class="rel-pipe muted" title="${t("Sin pipeline")}">·</span>`;
+        const pipe = st?.pipeline ? pipelineDot(st.pipeline.state) : `<span class="rel-pipe muted" title="${t("Sin pipeline aún")}">·</span>`;
         const envs = (st?.environments || [])
           .map((e) => `<span class="rel-env ${e.state === "available" ? "up" : ""}">${esc(e.name)}</span>`)
           .join("");
-        const link = st?.pipeline?.webUrl || res.releaseUrl;
-        return `<div class="rel-res-row ok">
-          ${pipe} ✓ ${esc(res.name)} <code>${esc(res.tag)}</code>
-          ${link ? `<a data-url="${esc(link)}" href="#">${t("ver")}</a>` : ""}
-          ${envs ? `<span class="rel-envs">${envs}</span>` : ""}
+        const relBtn = res.releaseUrl ? `<a class="rel-pub-btn" data-url="${esc(res.releaseUrl)}" href="#">🏷️ ${t("Ver release")}</a>` : "";
+        const pipeBtn = st?.pipeline?.webUrl ? `<a class="rel-pub-btn pipe" data-url="${esc(st.pipeline.webUrl)}" href="#">⚙️ ${t("Ver pipeline")}</a>` : "";
+        return `<div class="rel-pub-card ok">
+          <div class="rel-pub-cardtop">${pipe} <b class="rel-pub-name">${esc(res.name)}</b> <code class="rel-pub-tag">${esc(res.tag)}</code></div>
+          <div class="rel-pub-cardbtns">${relBtn}${pipeBtn || `<span class="muted rel-pub-pending">${t("Pipeline pendiente…")}</span>`}</div>
+          ${envs ? `<div class="rel-envs">${envs}</div>` : ""}
         </div>`;
       })
       .join("");
     resultsHtml = `
       <div class="rel-summary ${cls}">Release <code>${esc(p.results.base)}.x</code> ${t("desde")} <code>${esc(p.results.ref)}</code> · ${ok === 1 ? t("{n} publicada", { n: ok }) : t("{n} publicadas", { n: ok })}${fail ? ` · ${t("{n} con error", { n: fail })}` : ""}</div>
-      <div class="rel-results">${rowsHtml}</div>`;
+      <div class="rel-pub-cards">${rowsHtml}</div>
+      ${ok ? `<div class="rel-pub-cta"><button class="btn ghost" id="rel-pub-goto-pipelines">${t("Ver pipelines de despliegue")} →</button></div>` : ""}`;
   }
 
   list.innerHTML = `
@@ -160,12 +163,13 @@ function renderReleasePublish() {
     saveReleaseSelection();
     renderReleasePublish();
   });
-  list.querySelectorAll(".rel-results a[data-url]").forEach((a) =>
+  list.querySelectorAll("a[data-url]").forEach((a) =>
     a.addEventListener("click", (event) => {
       event.preventDefault();
       if (a.dataset.url) window.monstro.openExternal(a.dataset.url);
     }),
   );
+  $("#rel-pub-goto-pipelines")?.addEventListener("click", () => enterReleases("pipelines"));
   $("#rel-publish")?.addEventListener("click", confirmAndPublishReleases);
   notifySelftestOnce();
 }
