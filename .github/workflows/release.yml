@@ -43,7 +43,9 @@ jobs:
       - run: npm ci
 
       - name: Build ${{ matrix.artifact }}
-        run: npm run ${{ matrix.dist }}
+        # --publish never: electron-builder NO publica (al ver el tag lo intentaría
+        # y pediría GH_TOKEN); de la release se encarga el job `release` con softprops.
+        run: npm run ${{ matrix.dist }} -- --publish never
         env:
           # Firma ad-hoc (mac.identity "-" en package.json): evita el "app dañada"
           # en Apple Silicon sin certificado. Desactivamos el auto-descubrimiento

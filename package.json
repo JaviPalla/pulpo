@@ -50,9 +50,9 @@
       "buildResources": "build",
       "output": "dist"
     },
+    "afterPack": "scripts/adhoc-sign.js",
     "mac": {
       "category": "public.app-category.developer-tools",
-      "identity": "-",
       "target": ["dmg", "zip"]
     },
     "win": {
