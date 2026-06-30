@@ -1,0 +1,32 @@
+name: Tag & Release
+
+# Botón manual en la pestaña Actions: escribes la versión, esto sincroniza package.json,
+# commitea en main y crea el tag v<version>. El push del tag dispara release.yml (binarios + release).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versión sin la v, p.ej. 0.2.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Bump version + tag
+        run: |
+          set -e
+          npm version "${{ inputs.version }}" --no-git-tag-version
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(release): v${{ inputs.version }}"
+          git tag "v${{ inputs.version }}"
+          git push origin main --follow-tags

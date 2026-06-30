@@ -403,6 +403,10 @@ async function issueMRs() {
   throw new Error("La vista de Milestones solo está disponible en GitLab.");
 }
 
+async function projectIssues() {
+  throw new Error("La vista de Incidencias solo está disponible en GitLab.");
+}
+
 async function groupLabels() {
   throw new Error("La vista de Milestones solo está disponible en GitLab.");
 }
@@ -559,6 +563,7 @@ module.exports = {
   milestoneIssues,
   milestoneEpicChildren,
   issueMRs,
+  projectIssues,
   groupLabels,
   groupProjects,
   updateIssue,

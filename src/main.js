@@ -11,6 +11,8 @@ const drafts = require("./drafts");
 const local = require("./local");
 const localHistory = require("./localhistory");
 const provider = require("./provider");
+const { isNewer } = require("./version");
+const pkg = require("../package.json");
 
 // Proveedor activo (GitHub o GitLab) según config; se resuelve en cada llamada.
 const gh = () => provider.current();
@@ -145,7 +147,27 @@ function wireIpc() {
     const { token, ...rest } = config.load();
     // systemLocale = idioma del SO (BCP-47, p.ej. "es-ES"); el renderer lo usa como
     // idioma por defecto cuando config.language es null.
-    return { ...rest, hasManualToken: Boolean(token), systemLocale: app.getLocale() };
+    return { ...rest, hasManualToken: Boolean(token), systemLocale: app.getLocale(), appVersion: app.getVersion() };
+  });
+
+  // Comprueba si hay una versión nueva en las Releases de GitHub (repo de la propia app, público,
+  // sin token: es independiente del proveedor configurado). No instala nada — solo informa + enlace.
+  ipcMain.handle("update:check", async () => {
+    const current = app.getVersion();
+    const m = String(pkg.repository?.url || "").match(/github\.com[/:]([^/]+\/[^/.]+)/);
+    if (!m) return { current, error: "repositorio desconocido" };
+    try {
+      const res = await fetch(`https://api.github.com/repos/${m[1]}/releases/latest`, {
+        headers: { "User-Agent": "Monstro", Accept: "application/vnd.github+json" },
+      });
+      if (!res.ok) return { current, error: `GitHub ${res.status}` };
+      const json = await res.json();
+      const latest = String(json.tag_name || "").replace(/^v/, "");
+      if (!latest) return { current, error: "sin releases publicadas" };
+      return { current, latest, url: json.html_url, newer: isNewer(latest, current) };
+    } catch (err) {
+      return { current, error: String(err.message || err) };
+    }
   });
 
   ipcMain.handle("config:set", (_event, partial) => {
@@ -159,6 +181,7 @@ function wireIpc() {
     if (["one-dark", "dracula", "github-light"].includes(partial.theme)) allowed.theme = partial.theme;
     if (["default", "liquid-glass"].includes(partial.uiTheme)) allowed.uiTheme = partial.uiTheme;
     if (partial.language === "es" || partial.language === "en" || partial.language === null) allowed.language = partial.language;
+    if (typeof partial.checkUpdates === "boolean") allowed.checkUpdates = partial.checkUpdates;
     if (partial.provider === "github" || partial.provider === "gitlab") {
       allowed.provider = partial.provider;
       // Cambiar de proveedor invalida el token: era de otro sitio.
@@ -179,6 +202,11 @@ function wireIpc() {
     }
     if (typeof partial.lastRepo === "string") allowed.lastRepo = partial.lastRepo;
     if (typeof partial.lastBucket === "string") allowed.lastBucket = partial.lastBucket;
+    // Apartados del menú: enum cerrado de claves; el renderer manda solo las habilitadas.
+    if (Array.isArray(partial.sections)) {
+      const SECTION_KEYS = ["prs", "historial", "historico", "milestones", "soporte", "releases", "local"];
+      allowed.sections = partial.sections.filter((s) => SECTION_KEYS.includes(s));
+    }
     if (partial.cherryPick && typeof partial.cherryPick === "object") {
       const cp = partial.cherryPick;
       const branchRe = /^[\w./-]{1,200}$/;
@@ -236,6 +264,15 @@ function wireIpc() {
         next.rootDir = null;
       }
       allowed.local = next;
+    }
+    if (partial.support && typeof partial.support === "object") {
+      const next = { ...current.support };
+      const pathRe = /^[\w.-]+(\/[\w.-]+)+$/;
+      for (const k of ["incidencias", "operaciones"]) {
+        const v = partial.support[k];
+        if (typeof v === "string") next[k] = v.trim() && pathRe.test(v.trim()) ? v.trim() : "";
+      }
+      allowed.support = next;
     }
     const { token, ...rest } = config.save(allowed);
     return { ...rest, hasManualToken: Boolean(token) };
@@ -545,6 +582,11 @@ function wireIpc() {
     gh().milestoneEpicChildren(workItemId),
   );
   ipcMain.handle("milestones:issueMRs", async (_event, { workItemIds }) => gh().issueMRs(workItemIds || []));
+  ipcMain.handle("support:list", async (_event, { project }) => {
+    // El path llega del config (whitelist), no del renderer; validamos formato por si acaso.
+    if (typeof project !== "string" || !/^[\w.-]+(\/[\w.-]+)+$/.test(project)) throw new Error("Proyecto de soporte inválido.");
+    return gh().projectIssues(project);
+  });
   ipcMain.handle("issues:groupLabels", async () => gh().groupLabels());
   ipcMain.handle("issues:groupProjects", async () => gh().groupProjects());
   ipcMain.handle("issues:update", async (_event, { projectId, iid, patch }) =>

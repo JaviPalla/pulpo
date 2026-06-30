@@ -622,6 +622,12 @@ body.is-mac .traffic-pad { display: block; width: 78px; }
   background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px;
 }
 .ms-status-bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+/* Vista de Soporte: barra de filtros en fila (filtro de etiqueta + contador + refrescar). */
+.support-filters { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 12px; }
+.support-label-filter {
+  flex: 1; min-width: 160px; max-width: 280px; padding: 6px 10px; font-size: 13px;
+  background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+}
 /* Info del filtro: icono "i" en la esquina superior derecha del bloque, con popover en
    hover/focus que anima los tres estados. Hereda la fuente de la app (no serif). */
 .ms-filter-info {
@@ -955,6 +961,12 @@ body.is-mac .traffic-pad { display: block; width: 78px; }
 .provider-option { flex: 1; justify-content: center; padding: 18px 12px; font-size: 16px; }
 .provider-option.selected { border-color: var(--accent); background: var(--bg-hover); }
 .picker-manual input { flex: 1; }
+.section-ico { flex: 0 0 auto; }
+.section-presets { flex-wrap: wrap; }
+.section-presets .repo-option { flex: 1; justify-content: center; }
+.welcome-alt { margin: 14px 0 4px; }
+.welcome-alt summary { cursor: pointer; color: var(--text-muted); font-size: 13px; }
+.welcome-alt p { margin: 8px 0; }
 
 /* ---------- copy row + cheatsheet ---------- */
 .copy-row { display: flex; gap: 6px; flex-wrap: wrap; margin: -4px 0 10px; }

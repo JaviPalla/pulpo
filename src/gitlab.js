@@ -869,6 +869,15 @@ async function milestoneIssues(milestoneTitle, { includeClosed = false } = {}) {
   return mapped;
 }
 
+// Issues de UN proyecto suelto (no del grupo): para la vista de Incidencias, que apunta a un
+// proyecto que puede vivir en otro namespace (p.ej. soporte/incidencias, fuera del grupo de
+// milestones). Trae abiertas + cerradas; el filtrado (etiqueta, estado) es de visualización.
+async function projectIssues(projectPath) {
+  const enc = proj(projectPath);
+  const issues = await apiAll(`/projects/${enc}/issues?state=all&with_labels_details=true&scope=all`);
+  return issues.map(mapIssue);
+}
+
 // MRs (cierre + referenciadas) de un conjunto de work items por id, bajo demanda. Para las issues
 // cerradas cuando el usuario activa "Mostrar cerradas". Devuelve { [id]: [{webUrl,state,title}] }.
 async function issueMRs(workItemIds) {
@@ -1331,6 +1340,7 @@ module.exports = {
   listMilestones,
   milestoneIssues,
   milestoneEpicChildren,
+  projectIssues,
   issueMRs,
   groupLabels,
   groupProjects,

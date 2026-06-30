@@ -18,10 +18,15 @@ const DEFAULTS = {
   uiTheme: "default",
   // Idioma de la interfaz: "es" | "en". null = seguir el idioma del sistema (app.getLocale()).
   language: null,
+  // Comprobar al iniciar si hay una versión nueva en GitHub Releases (solo informa + enlace, no instala).
+  checkUpdates: true,
   aiModel: "claude-opus-4-8",
   aiEffort: "high",
   lastRepo: null,
   lastBucket: null,
+  // Apartados del menú habilitados (elegidos en el onboarding, editables en Ajustes).
+  // null = aún no elegido → se muestran todos los disponibles del proveedor (retrocompat).
+  sections: null,
   // Token manual SOLO como último recurso; lo normal es el CLI (gh/glab) o la env var.
   token: null,
   // Cherry-pick de hotfix tras merge (solo GitLab). Las MR de hotfix/* van a la release branch;
@@ -78,6 +83,13 @@ const DEFAULTS = {
       appDateKey: "AppDate",
     },
   },
+  // Vista de Soporte (solo GitLab): boards "tareas por persona" de proyectos sueltos del namespace
+  // soporte (fuera del grupo de milestones). Cada clave = un apartado de la sidebar → su path de
+  // proyecto. "" = sin configurar (el apartado avisa de configurarlo).
+  support: {
+    incidencias: "soporte/incidencias", // apartado "Support"
+    operaciones: "soporte/operaciones", // apartado "Ops"
+  },
   // Trabajo local → GitLab (OPE-19): publicar trabajo de ramas/worktrees locales como Issues/Epics + MRs.
   local: {
     // Directorio raíz donde conviven todos los clones de GitLab (un nivel). null = sin configurar.
@@ -103,6 +115,7 @@ function load() {
     cfg.releases.ouicare = { ...DEFAULTS.releases.ouicare, ...(parsed.releases?.ouicare || {}) };
     // Merge profundo de local: un guardado parcial no debe pisar los defaults del resto de claves.
     cfg.local = { ...DEFAULTS.local, ...(parsed.local || {}) };
+    cfg.support = { ...DEFAULTS.support, ...(parsed.support || {}) };
     return cfg;
   } catch {
     return { ...DEFAULTS };

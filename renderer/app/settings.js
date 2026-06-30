@@ -93,6 +93,11 @@ function openSettings() {
         </div>
       </div>
       <div class="settings-card">
+        <h4>${t("Apartados del menú")} 🧭</h4>
+        <p class="muted">${t("Activa u oculta secciones de la barra lateral. Tiene que quedar al menos una.")}</p>
+        <div id="settings-sections" class="repo-picker"></div>
+      </div>
+      <div class="settings-card">
         <h4>${t("IA (Review con IA 🤖)")}</h4>
         <p class="muted" id="ai-status-line">${t("Comprobando backend…")}</p>
         <div class="add-repo">
@@ -110,6 +115,18 @@ function openSettings() {
         </div>
       </div>
       ${isGitlab() ? cherryPickSettingsCard(cfg) : ""}
+      <div class="settings-card">
+        <h4>${t("Actualizaciones")} ⬆️</h4>
+        <p class="muted">${t("Versión instalada:")} <b>v${esc(cfg.appVersion || "?")}</b></p>
+        <label style="display:block;margin:8px 0">
+          <input type="checkbox" id="check-updates" ${cfg.checkUpdates ? "checked" : ""} />
+          ${t("Comprobar al iniciar si hay una versión nueva")}
+        </label>
+        <div class="add-repo">
+          <button class="btn" id="check-updates-now">${t("Buscar actualizaciones ahora")}</button>
+        </div>
+        <p class="muted" id="update-status"></p>
+      </div>
       <div class="settings-card">
         <h4>${t("Idioma")} 🌐</h4>
         <p class="muted">${t("Idioma de la interfaz. Por defecto sigue el idioma del sistema.")}</p>
@@ -195,6 +212,37 @@ function openSettings() {
     state.config = await window.monstro.setConfig({ token: $("#manual-token").value });
     toast(t("Token guardado"), "ok");
     boot();
+  });
+  // Apartados del menú: edición en vivo (mínimo 1). Guarda y reaplica visibilidad sin recargar.
+  const secSel = new Set(cfg.sections || availableSectionKeys());
+  const renderSecToggles = () => {
+    const el = $("#settings-sections");
+    el.innerHTML = sectionToggleRows(secSel);
+    wireSectionToggles(el, secSel, async () => {
+      state.config = await window.monstro.setConfig({ sections: [...secSel] });
+      applyMenuVisibility();
+      renderSecToggles();
+    }, 1);
+  };
+  renderSecToggles();
+  $("#check-updates").addEventListener("change", async (event) => {
+    state.config = await window.monstro.setConfig({ checkUpdates: event.target.checked });
+  });
+  $("#check-updates-now").addEventListener("click", async () => {
+    const btn = $("#check-updates-now");
+    const line = $("#update-status");
+    btn.disabled = true;
+    btn.textContent = t("Comprobando…");
+    try {
+      const r = await window.monstro.checkUpdates();
+      if (r.error) line.textContent = t("No se pudo comprobar: {detail}", { detail: r.error });
+      else if (r.newer) line.innerHTML = `✨ ${t("Hay una versión nueva: {v}", { v: `v${esc(r.latest)}` })} — <a href="#" id="update-link">${t("descargar ↗")}</a>`;
+      else line.textContent = t("Ya tienes la última versión (v{v})", { v: r.latest || r.current });
+      $("#update-link")?.addEventListener("click", (e) => { e.preventDefault(); window.monstro.openExternal(r.url); });
+    } finally {
+      btn.disabled = false;
+      btn.textContent = t("Buscar actualizaciones ahora");
+    }
   });
   $("#app-language").addEventListener("change", (event) => {
     const value = event.target.value;
@@ -298,6 +346,89 @@ function openSettings() {
   });
 }
 
+/* ============ apartados del menú (onboarding + Ajustes) ============ */
+
+// Presets de rol: pre-marcan un conjunto de apartados; el usuario luego afina. "todo" se calcula
+// como availableSectionKeys(). Solo se aplican las claves válidas para el proveedor actual.
+const SECTION_PRESETS = {
+  desarrollo: ["prs", "historial", "historico", "milestones", "releases", "local"],
+  operaciones: ["soporte", "milestones", "historico"],
+};
+
+/** Filas de toggles (botón por apartado, estilo .repo-option) reutilizadas en onboarding y Ajustes. */
+function sectionToggleRows(selected) {
+  return availableSectionKeys()
+    .map((key) => {
+      const sec = MENU_SECTIONS[key];
+      const on = selected.has(key);
+      return `<button class="repo-option section-option ${on ? "selected" : ""}" data-section="${key}">
+        <span class="repo-check">${on ? "✓" : ""}</span>
+        <span class="section-ico">${sec.icon}</span>
+        <span class="repo-name">${t(sec.label)}</span>
+      </button>`;
+    })
+    .join("");
+}
+
+/** Cablea los clicks de los toggles. min = nº mínimo de apartados que deben quedar activos. */
+function wireSectionToggles(scope, selected, onChange, min = 0) {
+  scope.querySelectorAll("[data-section]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.section;
+      if (selected.has(key)) {
+        if (selected.size <= min) return; // no dejar el menú por debajo del mínimo
+        selected.delete(key);
+      } else selected.add(key);
+      onChange();
+    }),
+  );
+}
+
+/** Paso final del onboarding: elegir qué apartados del menú incluir (con presets de rol). */
+async function renderSectionPicker() {
+  const selected = new Set(availableSectionKeys()); // por defecto, todo marcado
+  const presetKeys = (name) =>
+    (name === "todo" ? availableSectionKeys() : SECTION_PRESETS[name]).filter((k) => availableSectionKeys().includes(k));
+  list.innerHTML = `
+    <div class="welcome">
+      <div class="welcome-logo">${mascot(64)}</div>
+      <h2>${t("¿Qué apartados quieres ver?")}</h2>
+      <p class="muted">${t("Activa solo lo que uses — podrás cambiarlo cuando quieras en Ajustes ⚙. Empieza por un perfil:")}</p>
+      <div class="provider-choice section-presets">
+        <button class="repo-option" data-preset="desarrollo"><span class="repo-name">🧑‍💻 ${t("Desarrollo")}</span></button>
+        <button class="repo-option" data-preset="operaciones"><span class="repo-name">🛟 ${t("Operaciones")}</span></button>
+        <button class="repo-option" data-preset="todo"><span class="repo-name">✨ ${t("Todo")}</span></button>
+      </div>
+      <div id="section-picker" class="repo-picker"></div>
+      <div class="welcome-actions">
+        <button class="btn btn-accent" id="section-start">${t("Continuar")}</button>
+      </div>
+    </div>`;
+
+  const pickEl = $("#section-picker");
+  const startBtn = $("#section-start");
+  const renderRows = () => {
+    pickEl.innerHTML = sectionToggleRows(selected);
+    wireSectionToggles(pickEl, selected, renderRows);
+    startBtn.disabled = !selected.size;
+  };
+  list.querySelectorAll("[data-preset]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      selected.clear();
+      presetKeys(btn.dataset.preset).forEach((k) => selected.add(k));
+      list.querySelectorAll("[data-preset]").forEach((b) => b.classList.toggle("selected", b === btn));
+      renderRows();
+    }),
+  );
+  startBtn.addEventListener("click", async () => {
+    if (!selected.size) return;
+    state.config = await window.monstro.setConfig({ sections: [...selected] });
+    boot();
+  });
+  renderRows();
+  notifySelftestOnce();
+}
+
 /* ============ bienvenida / onboarding ============ */
 
 /** Primer paso del onboarding: elegir proveedor (GitHub o GitLab). */
@@ -354,27 +485,42 @@ async function renderWelcome() {
   const aiStatus = await window.monstro.aiStatus().catch(() => ({ backend: null, detail: "" }));
   const aiOk = Boolean(aiStatus.backend);
   const gitlab = isGitlab();
-  const cliCmd = gitlab ? "brew install glab && glab auth login" : "brew install gh && gh auth login";
-  const cliName = gitlab ? t("CLI oficial de GitLab (glab)") : t("CLI oficial de GitHub");
   const envVar = gitlab ? "GITLAB_TOKEN" : "GITHUB_TOKEN";
+  const cliCmd = gitlab ? "glab auth login" : "gh auth login";
+  // Enlace exacto a la creación del token, con nombre y permisos mínimos ya prerellenados.
+  const base = gitlab ? (state.config.gitlabBaseUrl || "https://gitlab.com").replace(/\/+$/, "") : "https://github.com";
+  const patUrl = gitlab
+    ? `${base}/-/user_settings/personal_access_tokens?name=Monstro&scopes=api,read_user`
+    : "https://github.com/settings/tokens/new?description=Monstro&scopes=repo,read:org";
+  const scopes = gitlab ? "api, read_user" : "repo, read:org";
   list.innerHTML = `
     <div class="welcome">
       <div class="welcome-logo">${mascot(64)}</div>
-      <h2>${t("Bienvenido a Monstro")}</h2>
-      <p class="muted">${t("Dos pasos y listo. Monstro no guarda credenciales: usa las sesiones que ya tienes.")}</p>
+      <h2>${t("Conecta {name}", { name: providerName() })}</h2>
+      <p class="muted">${t("Dos clics: crea un token y pégalo aquí. Monstro lo guarda solo en tu equipo (cifrado, 0600); nunca se envía a nadie.")}</p>
 
-      <div class="setup-step bad">
+      <div class="setup-step">
         <div class="setup-mark">1</div>
         <div>
-          <b>${t("Conecta {name}", { name: providerName() })}</b> <span class="chip chip-closed">${t("pendiente")}</span>
-          <p class="muted">${t("La vía fácil es el {cli} — Monstro coge el token de ahí:", { cli: cliName })}</p>
-          <pre class="setup-cmd">${cliCmd}</pre>
-          <p class="muted">${t("Alternativas: exporta")} <code>${envVar}</code>${t(", o pega un token en Ajustes ⚙.")}</p>
+          <b>${t("Crea el token")}</b>
+          <p class="muted">${t("Abre la página (ya con el nombre y los permisos {scopes} preparados), genera el token y cópialo.", { scopes })}</p>
+          <button class="btn btn-accent" id="welcome-open-pat">${t("Crear token en {name} ↗", { name: providerName() })}</button>
+        </div>
+      </div>
+
+      <div class="setup-step">
+        <div class="setup-mark">2</div>
+        <div>
+          <b>${t("Pega el token")}</b>
+          <div class="add-repo" style="margin-top:6px">
+            <input type="password" id="welcome-token" placeholder="${gitlab ? "glpat-…" : "ghp_…"}" />
+            <button class="btn btn-accent" id="welcome-save-token">${t("Conectar")}</button>
+          </div>
         </div>
       </div>
 
       <div class="setup-step ${aiOk ? "ok" : ""}">
-        <div class="setup-mark">2</div>
+        <div class="setup-mark">3</div>
         <div>
           <b>${t("Conecta Claude")}</b> <span class="chip ${aiOk ? "chip-open" : "chip-draft"}">${aiOk ? t("listo") : t("opcional")}</span>
           <p class="muted">${aiOk
@@ -383,14 +529,23 @@ async function renderWelcome() {
         </div>
       </div>
 
-      <div class="welcome-actions">
-        <button class="btn btn-accent" id="welcome-retry">${t("He hecho login — Reintentar")}</button>
-        <button class="btn" id="welcome-settings">${t("Abrir Ajustes ⚙")}</button>
-      </div>
+      <details class="welcome-alt">
+        <summary>${t("¿Prefieres la terminal?")}</summary>
+        <p class="muted">${t("Si tienes el CLI oficial, Monstro coge el token solo:")} <code>${cliCmd}</code>. ${t("O exporta")} <code>${envVar}</code>. ${t("Después pulsa Reintentar.")}</p>
+        <button class="btn" id="welcome-retry">${t("He hecho login — Reintentar")}</button>
+      </details>
       <p class="muted small-print">${t("¿Dudas?")} <code>npm run doctor</code> ${t("en la terminal diagnostica todo esto por ti.")}</p>
     </div>`;
-  $("#welcome-retry").addEventListener("click", boot);
-  $("#welcome-settings").addEventListener("click", openSettings);
+  $("#welcome-open-pat").addEventListener("click", () => window.monstro.openExternal(patUrl));
+  $("#welcome-save-token").addEventListener("click", async () => {
+    const token = $("#welcome-token").value.trim();
+    if (!token) return toast(t("Pega primero el token"), "err");
+    state.config = await window.monstro.setConfig({ token });
+    const auth = await window.monstro.authStatus().catch(() => ({ ok: false }));
+    if (!auth.ok) return toast(t("El token no funcionó — revisa los permisos y cópialo de nuevo"), "err");
+    boot();
+  });
+  $("#welcome-retry")?.addEventListener("click", boot);
   list.querySelectorAll("[data-ext]").forEach((a) =>
     a.addEventListener("click", (event) => {
       event.preventDefault();
